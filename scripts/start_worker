@@ -1,0 +1,16 @@
+#!/bin/bash
+
+if command -v lscpu &> /dev/null; then
+    cores=$(lscpu | awk '/^Core\(s\) per socket:/ {c=$4} /^Socket\(s\):/ {s=$2} END {print c * s}')
+    limit=$(awk -v c="$cores" 'BEGIN { print (c * 0.9 >= 1) ? int(c * 0.9) : 1 }')
+    concurrency="--concurrency=$limit"
+    # Check that is a valid number
+    if ! [[ $limit =~ ^[0-9]+$ ]]; then
+        echo "Error: Concurrency limit is not a valid number."
+        concurrency=""
+    fi
+else
+    concurrency=""
+fi
+
+celery -A project worker $concurrency -l INFO

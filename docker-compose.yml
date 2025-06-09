@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    container_name: anomaly-detection-local-db
+    hostname: db
+    ports:
+      - "5432:5432"
+    volumes:
+      - anomaly-detection-local-db_data:/var/lib/postgresql/data
+      - anomaly-detection-local-db_data_backups:/backups
+    env_file:
+      - ./.envs/.local/.postgres.env
+    # command: "-c log_statement=all"
+
+  broker:
+    image: rabbitmq:4.1.0-management
+    container_name: anomaly-detection-local-broker
+    hostname: broker
+    configs:
+      - source: plugins
+        target: /etc/rabbitmq/enabled_plugins
+    env_file:
+      - ./.envs/.local/.django.env
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  api: &api
+    build:
+      context: .
+      args:
+        - DEV=true
+    image: mosquito-alert/anomaly-detection-local-api
+    container_name: anomaly-detection-local-api
+    hostname: api
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/usr/app
+    env_file:
+      - ./.envs/.local/.django.env
+      - ./.envs/.local/.postgres.env
+    healthcheck:
+      test: "curl -f http://localhost:8000/ping/ || exit 1"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - db
+      - broker
+    command: /scripts/start
+
+  worker:
+    <<: *api
+    container_name: anomaly-detection-local-worker
+    hostname: worker
+    ports: []
+    command: /scripts/start_worker
+
+
+  worker_flower:
+    <<: *api
+    container_name: anomaly-detection-local-flower
+    hostname: flower
+    ports:
+      - "5556:5555"
+    command: /scripts/start_flower
+
+volumes:
+  anomaly-detection-local-db_data:
+  anomaly-detection-local-db_data_backups:
+
+configs:
+  plugins:
+    content: "[rabbitmq_federation_management,rabbitmq_management,rabbitmq_mqtt,rabbitmq_stomp]."

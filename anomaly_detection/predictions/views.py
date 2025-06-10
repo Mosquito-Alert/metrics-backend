@@ -1,4 +1,3 @@
-from datetime import datetime
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (OpenApiParameter, OpenApiResponse, extend_schema,
@@ -8,7 +7,7 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 from vectortiles.mixins import BaseVectorTileView
@@ -71,6 +70,8 @@ class MetricViewSet(BaseVectorTileView, GenericViewSet, ListModelMixin, Retrieve
     """
     queryset = Metric.objects
     serializer_class = MetricSerializer
+    authentication_classes = []  # No authentication required by default
+    permission_classes = [AllowAny]  # Allow any user by default
     layer_classes = [MetricMunicipalityVectorLayer]
     filter_backends = [
         DjangoFilterBackend,

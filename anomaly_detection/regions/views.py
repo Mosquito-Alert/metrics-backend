@@ -7,9 +7,15 @@ from rest_framework.viewsets import GenericViewSet
 from vectortiles.mixins import BaseVectorTileView
 from vectortiles.rest_framework.renderers import MVTRenderer
 
-from anomaly_detection.regions.models import Municipality
+from anomaly_detection.regions.models import AutonomousCommunity, Municipality, Province
 from anomaly_detection.regions.serializers import MunicipalityRetrieveSerializer, MunicipalitySerializer
-from anomaly_detection.regions.vector_layers import MunicipalityVectorLayer, ProvinceVectorLayer
+from anomaly_detection.regions.vector_layers import (
+    AutonomousCommunityLayer,
+    MunicipalityVectorLayer,
+    ProvinceVectorLayer,
+    RegionMunicipalityVectorLayer,
+    RegionProvinceVectorLayer
+)
 
 
 @extend_schema_view(
@@ -39,7 +45,7 @@ class RegionViewSet(BaseVectorTileView, GenericViewSet, ListModelMixin, Retrieve
     """
     queryset = Municipality.objects
     serializer_class = MunicipalitySerializer
-    layer_classes = [MunicipalityVectorLayer, ProvinceVectorLayer]
+    layer_classes = [RegionMunicipalityVectorLayer, RegionProvinceVectorLayer, AutonomousCommunityLayer]
 
     @action(
         methods=['GET'],
@@ -49,7 +55,56 @@ class RegionViewSet(BaseVectorTileView, GenericViewSet, ListModelMixin, Retrieve
         url_name='tiles')
     def get_tiles(self, request, z, x, y, *args, **kwargs):
         """
-        Action that returns the tiles of a specified area and zoom
+        Action that returns the tiles of a specified region and zoom. This endpoint is dynamic, so it will return
+        the tiles for a municipality, province, or autonomous community based on the zoom level.
+        """
+        z, x, y = int(z), int(x), int(y)
+        content, status = self.get_content_status(z, x, y)
+        return Response(content, status=status)
+
+    @action(
+        methods=['GET'],
+        detail=False,
+        layer_classes=[AutonomousCommunityLayer],
+        renderer_classes=(MVTRenderer, ),
+        queryset=AutonomousCommunity.objects.all(),
+        url_path=r'autonomous_communities/tiles/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)',
+        url_name='autonomous_communities_tiles')
+    def get_tiles_autonomous_communities(self, request, z, x, y, *args, **kwargs):
+        """
+        Action that returns the tiles of a specified autonomous community and zoom
+        """
+        z, x, y = int(z), int(x), int(y)
+        content, status = self.get_content_status(z, x, y)
+        return Response(content, status=status)
+
+    @action(
+        methods=['GET'],
+        detail=False,
+        layer_classes=[ProvinceVectorLayer],
+        renderer_classes=(MVTRenderer, ),
+        queryset=Province.objects.all(),
+        url_path=r'provinces/tiles/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)',
+        url_name='provinces_tiles')
+    def get_tiles_provinces(self, request, z, x, y, *args, **kwargs):
+        """
+        Action that returns the tiles of a specified province and zoom
+        """
+        z, x, y = int(z), int(x), int(y)
+        content, status = self.get_content_status(z, x, y)
+        return Response(content, status=status)
+
+    @action(
+        methods=['GET'],
+        detail=False,
+        layer_classes=[MunicipalityVectorLayer],
+        renderer_classes=(MVTRenderer, ),
+        queryset=Municipality.objects.all(),
+        url_path=r'municipalities/tiles/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)',
+        url_name='municipalities_tiles')
+    def get_tiles_municipalities(self, request, z, x, y, *args, **kwargs):
+        """
+        Action that returns the tiles of a specified municipality and zoom
         """
         z, x, y = int(z), int(x), int(y)
         content, status = self.get_content_status(z, x, y)

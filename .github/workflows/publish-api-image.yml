@@ -3,11 +3,11 @@ name: Create and publish a Docker image
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
-      - alpha
-      - beta
+    # branches:
+    #   - main
+    #   - master
+    #   - alpha
+    #   - beta
     tags:
       - 'v*'
 

@@ -29,9 +29,6 @@ def redis_lock(lock_key, timeout=30, wait_interval=1, max_wait=20):
             break
         time.sleep(wait_interval)
         total_waited += wait_interval
-        # DELETE: Debug
-        if total_waited >= 2:
-            print(f"Waiting for lock {lock_key} for {total_waited} seconds...")
 
     try:
         # Yield the lock status to the context manager caller, indicating if the lock was acquired

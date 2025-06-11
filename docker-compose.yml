@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgis/postgis:17-3.5
+    image: postgis/postgis:15-3.5
     container_name: anomaly-detection-local-db
     hostname: db
     ports:
@@ -11,6 +11,18 @@ services:
     env_file:
       - ./.envs/.local/.postgres.env
     # command: "-c log_statement=all"
+
+  redis:
+    image: redis:7.0.15
+    container_name: anomaly-detection-local-redis
+    hostname: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - anomaly-detection-local-redis_data:/data
+    env_file:
+      - ./.envs/.local/.django.env
+
 
   broker:
     image: rabbitmq:4.1.0-management
@@ -70,6 +82,7 @@ services:
 volumes:
   anomaly-detection-local-db_data:
   anomaly-detection-local-db_data_backups:
+  anomaly-detection-local-redis_data:
 
 configs:
   plugins:

@@ -14,8 +14,7 @@ class ProvinceVectorLayer(VectorLayer):
     model = Province
     id = "provinces"
     tile_fields = ('code', "name")
-    min_zoom = 5
-    max_zoom = 7
+    min_zoom = 0
     geom_field = "geometry"
 
 

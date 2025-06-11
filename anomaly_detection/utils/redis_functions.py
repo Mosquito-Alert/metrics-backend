@@ -5,7 +5,7 @@ import redis
 from django.conf import settings
 
 # Setup Redis client
-redis_client = redis.StrictRedis.from_url(settings.REDIS_URL)
+redis_client = redis.Redis.from_url(settings.REDIS_URL)
 
 
 @contextmanager

@@ -4,6 +4,7 @@ from celery import shared_task
 from django.db import IntegrityError, transaction, models
 from django.utils import timezone
 from anomaly_detection.utils.datetime import generate_date_range
+from anomaly_detection.utils.redis_functions import redis_lock
 
 
 @shared_task
@@ -23,6 +24,11 @@ def refresh_prediction_task(metric_id, refresh_progress=True):
     )
 
     if not getattr(metric, 'predictor', None):
+        lock_key = f"predictor_lock_{metric.region_id}"
+        with redis_lock(lock_key) as lock_acquired:
+            if not lock_acquired:
+                # If we couldn't acquire the lock, we skip this metric
+                return
         try:
             metric.predictor = Predictor.objects.get_not_expired(region_id=metric.region, date=aware_datetime)
         except Predictor.DoesNotExist:
@@ -94,13 +100,17 @@ def batch_update_metrics_for_predictor_task(predictor_id, from_date, to_date):
     except Predictor.DoesNotExist:
         return
 
+    results = predictor.predict(dates=list(generate_date_range(from_date, to_date)))
+    if not results:
+        return
+
     date_to_pk = {
         metric.date: metric
         for metric in predictor.metrics.filter(date__gte=from_date, date__lte=to_date).iterator(chunk_size=1000)
     }
 
     metric_to_update = []
-    for result in predictor.predict(dates=list(generate_date_range(from_date, to_date))):
+    for result in results:
         if metric := date_to_pk.get(result['datetime'].date(), None):
             metric.predicted_value = result['yhat']
             metric.upper_value = result['yhat_upper']

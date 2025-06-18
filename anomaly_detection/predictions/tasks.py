@@ -100,22 +100,22 @@ def batch_update_metrics_for_predictor_task(predictor_id, from_date, to_date):
     except Predictor.DoesNotExist:
         return
 
+    results = predictor.predict(dates=list(generate_date_range(from_date, to_date)))
+    if not results:
+        return
+
     date_to_pk = {
         metric.date: metric
         for metric in predictor.metrics.filter(date__gte=from_date, date__lte=to_date).iterator(chunk_size=1000)
     }
 
     metric_to_update = []
-    try:
-        for result in predictor.predict(dates=list(generate_date_range(from_date, to_date))):
-            if metric := date_to_pk.get(result['datetime'].date(), None):
-                metric.predicted_value = result['yhat']
-                metric.upper_value = result['yhat_upper']
-                metric.lower_value = result['yhat_lower']
-                metric_to_update.append(metric)
-    except TypeError:
-        # If the predictor returns None, we skip the update
-        return
+    for result in results:
+        if metric := date_to_pk.get(result['datetime'].date(), None):
+            metric.predicted_value = result['yhat']
+            metric.upper_value = result['yhat_upper']
+            metric.lower_value = result['yhat_lower']
+            metric_to_update.append(metric)
 
     if metric_to_update:
         Metric.objects.bulk_update(

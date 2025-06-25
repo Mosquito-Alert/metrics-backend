@@ -13,7 +13,7 @@ from .models import Metric
 class MetricMunicipalityVectorLayer(VectorLayer):
     queryset = Metric.objects.with_geometry()
     id = "metrics"
-    tile_fields = ('anomaly_degree', 'id', 'region__name', 'value')
+    tile_fields = ('anomaly_degree', 'id', 'region__name', 'region__province__autonomous_community__name', 'value')
     min_zoom = 0
     geom_field = "region__geometry"
 
@@ -36,7 +36,7 @@ class TimeSeriesMunicipalityVectorLayer(VectorLayer):
     """
     queryset = Metric.objects.with_geometry()
     id = "time_series_metrics"
-    tile_fields = ('region__name', 'timeseries')
+    tile_fields = ('region__name', 'timeseries', 'region__province__autonomous_community__name')
     min_zoom = 0
     geom_field = "geometry"
 
@@ -87,6 +87,7 @@ class TimeSeriesMunicipalityVectorLayer(VectorLayer):
             .annotate(
                 region__id=F("id"),
                 region__name=F("name"),
+                region__province__autonomous_community__name=F("province__autonomous_community__name"),
                 timeseries=Subquery(metric_entries_subquery[:1])
             )
         )

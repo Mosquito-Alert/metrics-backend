@@ -79,6 +79,14 @@ services:
       - "5556:5555"
     command: /scripts/start_flower
 
+  geoserver:
+    image: docker.osgeo.org/geoserver:2.28.x
+    container_name: anomaly-detection-local-geoserver
+    hostname: geoserver
+    ports:
+      - "8080:8080"
+
+
 volumes:
   anomaly-detection-local-db_data:
   anomaly-detection-local-db_data_backups:

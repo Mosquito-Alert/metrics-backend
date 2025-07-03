@@ -147,12 +147,36 @@ class MetricViewSet(BaseMetricTilesView, BaseVectorTileView, GenericViewSet, Lis
         renderer_classes=(MVTRenderer,),
         url_path=r'timeseries/tiles/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)',
         url_name='timeseries_tiles',
-        layer_classes=[TimeSeriesMunicipalityVectorLayer]
+        layer_classes=[TimeSeriesMunicipalityVectorLayer],
     )
     def get_timeseries_tiles(self, request, z, x, y, *args, **kwargs):
         z, x, y = int(z), int(x), int(y)
         content, status = self.get_content_status(z, x, y)
         return Response(content, status=status)
+
+    @extend_schema(
+        responses=LastMetricDateSerializer(many=True),
+    )
+    @action(
+        methods=['GET'],
+        detail=False,
+        url_path='dates',
+        url_name='dates',
+        serializer_class=LastMetricDateSerializer,
+        pagination_class=None,
+    )
+    def list_dates(self, *args, **kwargs):
+        """
+        Action that returns the all the dates in which there are metrics available.
+        """
+        executions = MetricPredictionProgress.objects.filter(success_percentage__gte=0.95).order_by("-date").all()
+        if executions:
+            serializer = self.get_serializer(executions, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(
+            {"detail": "No executions found."},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
     @action(
         methods=['GET'],

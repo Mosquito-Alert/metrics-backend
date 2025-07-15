@@ -1,96 +1,84 @@
 services:
-  db:
+  data_db:
     image: postgis/postgis:15-3.5
-    container_name: anomaly-detection-local-db
+    container_name: metrics-db
     hostname: db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - anomaly-detection-local-db_data:/var/lib/postgresql/data
-      - anomaly-detection-local-db_data_backups:/backups
+      - metrics-db_data:/var/lib/postgresql/data
+      - metrics-db_data_backups:/backups
     env_file:
-      - ./.envs/.local/.postgres.env
+      - ./api/.envs/.production/.postgres.env
     # command: "-c log_statement=all"
 
   redis:
     image: redis:7.0.15
-    container_name: anomaly-detection-local-redis
+    container_name: metrics-redis
     hostname: redis
-    ports:
-      - "6379:6379"
     volumes:
-      - anomaly-detection-local-redis_data:/data
+      - metrics-redis_data:/data
     env_file:
-      - ./.envs/.local/.django.env
+      - ./.envs/.production/.django.env
 
-
-  broker:
+  data_broker:
     image: rabbitmq:4.1.0-management
-    container_name: anomaly-detection-local-broker
+    container_name: metrics-broker
     hostname: broker
     configs:
       - source: plugins
         target: /etc/rabbitmq/enabled_plugins
     env_file:
-      - ./.envs/.local/.django.env
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+      - ./api/.envs/.local/.django.env
+    volumes:
+      - metrics-broker:/var/lib/rabbitmq
 
-  api: &api
-    build:
-      context: .
-      args:
-        - DEV=true
-    image: mosquito-alert/anomaly-detection-local-api
-    container_name: anomaly-detection-local-api
+  backend_api: &api
+    image:  ghcr.io/mosquito-alert/metrics-backend:0.2.0
+    container_name: metrics-api
     hostname: api
     ports:
-      - "8000:8000"
+      - "8000:5000"
     volumes:
-      - .:/usr/app
+      - ./api/static:/usr/app/static
     env_file:
-      - ./.envs/.local/.django.env
-      - ./.envs/.local/.postgres.env
+      - ./api/.envs/.production/.django.env
+      - ./api/.envs/.production/.postgres.env
     healthcheck:
-      test: "curl -f http://localhost:8000/ping/ || exit 1"
+      test: "curl -f http://localhost:5000/ping/ || exit 1"
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
     depends_on:
-      - db
-      - broker
-    command: /scripts/start
+      - data_db
+      - data_broker
 
-  worker:
+  backend_worker:
     <<: *api
-    container_name: anomaly-detection-local-worker
+    container_name: metrics-worker
     hostname: worker
     ports: []
     command: /scripts/start_worker
+    healthcheck:
+      test: "celery inspect ping -d celery@$$HOSTNAME"
 
 
-  worker_flower:
+  backend_worker_flower:
     <<: *api
-    container_name: anomaly-detection-local-flower
+    container_name: metrics-flower
     hostname: flower
     ports:
-      - "5556:5555"
+      - "5555:5555"
     command: /scripts/start_flower
-
-  geoserver:
-    image: docker.osgeo.org/geoserver:2.28.x
-    container_name: anomaly-detection-local-geoserver
-    hostname: geoserver
-    ports:
-      - "8080:8080"
-
+    healthcheck:
+      disable: true
 
 volumes:
-  anomaly-detection-local-db_data:
-  anomaly-detection-local-db_data_backups:
-  anomaly-detection-local-redis_data:
+  metrics-db_data:
+  metrics-db_data_backups:
+  metrics-broker:
+    driver: local
 
 configs:
   plugins:

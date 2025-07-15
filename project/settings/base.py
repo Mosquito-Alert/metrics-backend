@@ -1,5 +1,5 @@
 """
-Django 5.2 settings for the Bites Anomaly Detection project.
+Django 5.2 settings for the Metrics of the Mosquito Alert project.
 Base settings to build other settings files upon.
 """
 
@@ -185,11 +185,11 @@ REST_FRAMEWORK = {
 
 # Spectacular settings
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Bites Anomaly Detection API',
-    'DESCRIPTION': 'API for the Bites Anomaly Detection project',
+    'TITLE': 'Metrics API',
+    'DESCRIPTION': 'API for the Metrics of the Mosquito Alert project',
     'VERSION': '1.0.0',
     'CONTACT': {
-        'name': 'Bites Anomaly Detection',
+        'name': 'Metrics',
         'email': None,
         'url': None,
     },

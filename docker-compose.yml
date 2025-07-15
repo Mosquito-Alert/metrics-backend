@@ -12,7 +12,7 @@ services:
       - ./api/.envs/.production/.postgres.env
     # command: "-c log_statement=all"
 
-  redis:
+  data_redis:
     image: redis:7.0.15
     container_name: metrics-redis
     hostname: redis

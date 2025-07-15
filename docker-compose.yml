@@ -38,7 +38,7 @@ services:
     ports:
       - "8000:5000"
     volumes:
-      - ./api/static:/usr/app/static
+      - ./static:/usr/app/static
     env_file:
       - ./.envs/.production/.django.env
       - ./.envs/.production/.postgres.env

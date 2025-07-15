@@ -9,15 +9,13 @@ services:
       - metrics-db_data:/var/lib/postgresql/data
       - metrics-db_data_backups:/backups
     env_file:
-      - ./api/.envs/.production/.postgres.env
+      - ./.envs/.production/.postgres.env
     # command: "-c log_statement=all"
 
   data_redis:
     image: redis:7.0.15
     container_name: metrics-redis
     hostname: redis
-    volumes:
-      - metrics-redis_data:/data
     env_file:
       - ./.envs/.production/.django.env
 
@@ -42,8 +40,8 @@ services:
     volumes:
       - ./api/static:/usr/app/static
     env_file:
-      - ./api/.envs/.production/.django.env
-      - ./api/.envs/.production/.postgres.env
+      - ./.envs/.production/.django.env
+      - ./.envs/.production/.postgres.env
     healthcheck:
       test: "curl -f http://localhost:5000/ping/ || exit 1"
       interval: 30s

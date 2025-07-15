@@ -4,7 +4,7 @@ services:
     container_name: metrics-db
     hostname: db
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - metrics-db_data:/var/lib/postgresql/data
       - metrics-db_data_backups:/backups
@@ -67,7 +67,7 @@ services:
     container_name: metrics-flower
     hostname: flower
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     command: /scripts/start_flower
     healthcheck:
       disable: true

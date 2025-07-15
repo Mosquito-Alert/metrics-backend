@@ -27,7 +27,7 @@ services:
       - source: plugins
         target: /etc/rabbitmq/enabled_plugins
     env_file:
-      - ./api/.envs/.local/.django.env
+      - ./.envs/.local/.django.env
     volumes:
       - metrics-broker:/var/lib/rabbitmq
 

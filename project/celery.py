@@ -5,7 +5,7 @@ from celery import Celery
 # set the default Django settings module for the 'celery' program.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'project.settings.production')
 
-app = Celery('metrics')
+app = Celery('src')
 
 # You load any custom configuration from your project settings using the config_from_object()
 # method. By setting the CELERY namespace, all Celery settings need to include

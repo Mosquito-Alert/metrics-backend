@@ -18,7 +18,7 @@ def main():
         ) from exc
 
     current_path = Path(__file__).parent.resolve()
-    sys.path.append(str(current_path / "metrics"))
+    sys.path.append(str(current_path / "src"))
 
     execute_from_command_line(sys.argv)
 

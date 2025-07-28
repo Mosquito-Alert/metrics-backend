@@ -49,9 +49,9 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
-    'metrics.utils',
-    'metrics.regions',
-    'metrics.predictions',
+    'src.utils',
+    'src.regions',
+    'src.predictions',
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -176,7 +176,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'metrics.utils.pagination.StandardPagination',
+    'DEFAULT_PAGINATION_CLASS': 'src.utils.pagination.StandardPagination',
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.OrderingFilter',

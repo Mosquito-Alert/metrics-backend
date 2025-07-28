@@ -49,9 +49,9 @@ THIRD_PARTY_APPS = [
 ]
 
 LOCAL_APPS = [
-    'anomaly_detection.utils',
-    'anomaly_detection.regions',
-    'anomaly_detection.predictions',
+    'src.utils',
+    'src.regions',
+    'src.predictions',
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -83,7 +83,7 @@ DATABASES = {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
-        'NAME': os.environ.get('POSTGRES_DB', 'anomaly_detection'),
+        'NAME': os.environ.get('POSTGRES_DB', 'metrics'),
         'USER': os.environ.get('POSTGRES_USER'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
     }
@@ -176,7 +176,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'anomaly_detection.utils.pagination.StandardPagination',
+    'DEFAULT_PAGINATION_CLASS': 'src.utils.pagination.StandardPagination',
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.OrderingFilter',

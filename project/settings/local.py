@@ -10,7 +10,7 @@ ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
 # * DATABASES
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
-DATABASES['default']['USER'] = os.environ.get('POSTGRES_USER', 'anomaly_detection_user')  # noqa: F405
+DATABASES['default']['USER'] = os.environ.get('POSTGRES_USER', 'metrics_user')  # noqa: F405
 DATABASES['default']['PASSWORD'] = os.environ.get(
     'POSTGRES_PASSWORD',
     'insecure_password_for_local_development')  # noqa: F405

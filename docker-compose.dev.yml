@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgis/postgis:15-3.5
+    image: timescale/timescaledb-ha:pg15
     container_name: anomaly-detection-local-db
     hostname: db
     ports:

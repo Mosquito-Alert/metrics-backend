@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from datetime import datetime
 
-from src.regions.models import Municipality
+from src.predictions.models import Boundary
 from src.predictions.tasks import predict_batch_task
 
 
@@ -14,10 +14,16 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--region',
+            '--h3-index',
             type=str,
             default=None,
-            help='Filter by region (e.g., "ESP.1.1.1.1_1")'
+            help='Filter by H3 index (e.g., "8928308280fffff")'
+        )
+        parser.add_argument(
+            '--metric-id',
+            type=int,
+            default=None,
+            help='Filter by metric ID'
         )
         parser.add_argument(
             '--from-date',
@@ -39,11 +45,12 @@ class Command(BaseCommand):
 
         from_date = options.get('from_date')
         to_date = options.get('to_date')
-        region = options.get('region')
+        h3_index = options.get('h3_index')
+        metric_id = options.get('metric_id')
 
-        region_qs = Municipality.objects.all()
-        if region:
-            region_qs = region_qs.filter(code=region)
+        boundary_qs = Boundary.objects.all()
+        if h3_index:
+            boundary_qs = boundary_qs.filter(h3_index=h3_index)
 
-        for region in region_qs.iterator(chunk_size=1000):
-            predict_batch_task.delay(from_date=from_date, to_date=to_date, region_id=region.id)
+        for boundary in boundary_qs.iterator(chunk_size=1000):
+            predict_batch_task.delay(from_date=from_date, to_date=to_date, boundary_id=boundary.id, metric_id=metric_id)

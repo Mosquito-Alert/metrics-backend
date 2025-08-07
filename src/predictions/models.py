@@ -536,11 +536,11 @@ class MetricPredictionProgress(models.Model):
     )
 
     @classmethod
-    def refresh(cls, date: datetime):
+    def refresh(cls, time: datetime):
         with transaction.atomic():
-            total_raw_values = RawValue.objects.filter(time__date=date.date()).count()
+            total_raw_values = RawValue.objects.filter(time__date=time.date()).count()
             total_predicted = PredictedValue.objects.filter(
-                raw_value__time__date=date.date(),
+                raw_value__time__date=time,
                 value__isnull=False
             ).count()
 
@@ -549,7 +549,7 @@ class MetricPredictionProgress(models.Model):
                 success_percentage = total_predicted / total_raw_values
 
             cls.objects.update_or_create(
-                time=date,
+                time=time,
                 defaults={'success_percentage': success_percentage}
             )
 

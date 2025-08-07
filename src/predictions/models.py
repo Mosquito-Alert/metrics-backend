@@ -1,7 +1,6 @@
 import math
 from datetime import datetime
 from typing import List, Optional, TypedDict
-from django.forms import BooleanField
 import pandas as pd
 
 from django.contrib.postgres.fields import ArrayField
@@ -265,21 +264,21 @@ class PredictorConfig(models.Model):
         verbose_name=_('Metric'),
         help_text=_('The metric associated to the predictor configuration.')
     )
-    yearly_seasonality = BooleanField(
+    yearly_seasonality = models.BooleanField(
         default=True,
         blank=False,
         null=False,
         verbose_name=_('Yearly Seasonality'),
         help_text=_('Whether the predictor should consider yearly seasonality.')
     )
-    weekly_seasonality = BooleanField(
+    weekly_seasonality = models.BooleanField(
         default=False,
         blank=False,
         null=False,
         verbose_name=_('Weekly Seasonality'),
         help_text=_('Whether the predictor should consider weekly seasonality.')
     )
-    daily_seasonality = BooleanField(
+    daily_seasonality = models.BooleanField(
         default=False,
         blank=False,
         null=False,
@@ -301,7 +300,7 @@ class PredictorConfig(models.Model):
         verbose_name=_('Is Enabled'),
         help_text=_(
             'Whether the predictor is enabled or not.'
-            'If disabled, the predictor will not be used for predictions.'
+            'If disabled, the predictor will not be used for making predictions.'
         ),
     )
 
@@ -554,12 +553,12 @@ class MetricPredictionProgress(models.Model):
             )
 
     def __str__(self):
-        return f"Metric Execution of the day {self.date} with result: {self.success_percentage}"
+        return f"Metric Execution of the day {self.time} with result: {self.success_percentage}"
 
     class Meta:
-        ordering = ['date']
+        ordering = ['time']
         indexes = [
-            models.Index(fields=['-date'])
+            models.Index(fields=['-time'])
         ]
         verbose_name = "Metric Prediction Progress"
         verbose_name_plural = "Metric Prediction Progressses"

@@ -2,7 +2,8 @@
 Define PostgreSQL types that aren't natively supported in Django for use in Django models.
 """
 
-from django.forms import models
+
+from django.db import models
 
 
 class RealField(models.FloatField):

@@ -8,19 +8,19 @@ from src.utils.redis_functions import redis_lock
 
 
 @shared_task
-def refresh_prediction_task(metric_id, refresh_progress=True):
+def refresh_prediction_task(raw_value_id, refresh_progress=True):
     """
     Invokes the predictor and assign the Prediction fields.
     """
-    from src.predictions.models import Metric, MetricPredictionProgress, Predictor
+    from src.predictions.models import MetricPredictionProgress, Predictor, RawValue
 
     try:
-        metric = Metric.objects.get(id=metric_id)
-    except Metric.DoesNotExist:
+        metric = RawValue.objects.get(id=raw_value_id)
+    except RawValue.DoesNotExist:
         return
 
     aware_datetime = timezone.make_aware(
-        datetime.combine(metric.date, datetime.min.time())
+        datetime.combine(metric.time, datetime.min.time())
     )
 
     if not getattr(metric, 'predictor', None):

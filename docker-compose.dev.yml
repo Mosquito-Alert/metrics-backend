@@ -1,5 +1,7 @@
 services:
   db:
+    # NOTE: timescaledb-ha includes PostGIS support; the timescaledb-postgis image is deprecated.
+    # See https://hub.docker.com/r/timescale/timescaledb-postgis
     image: timescale/timescaledb-ha:pg15
     container_name: anomaly-detection-local-db
     hostname: db
@@ -22,7 +24,6 @@ services:
       - anomaly-detection-local-redis_data:/data
     env_file:
       - ./.envs/.local/.django.env
-
 
   broker:
     image: rabbitmq:4.1.0-management
@@ -69,7 +70,6 @@ services:
     hostname: worker
     ports: []
     command: /scripts/start_worker
-
 
   worker_flower:
     <<: *api

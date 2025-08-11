@@ -186,7 +186,7 @@ REST_FRAMEWORK = {
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Metrics API',
     'DESCRIPTION': 'API for the Metrics of the Mosquito Alert project',
-    'VERSION': '1.0.0',
+    'VERSION': '2.0.0',
     'CONTACT': {
         'name': 'Metrics',
         'email': None,
@@ -194,8 +194,8 @@ SPECTACULAR_SETTINGS = {
     },
     'SERVERS': [
         {
-            'url': 'http://localhost:8000/api/v1/',
-            'description': 'Development API v1'
+            'url': 'http://localhost:8000/api/v2/',
+            'description': 'Development API v2'
         },
     ],
     'SCHEMA_PATH_PREFIX': '/api/v[0-9]',

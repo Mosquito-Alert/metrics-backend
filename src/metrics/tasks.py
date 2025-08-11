@@ -19,45 +19,44 @@ def refresh_prediction_task(metric_value_id, refresh_progress=True):
     except MetricValue.DoesNotExist:
         return
 
-    predicted_value = metric_value.predicted_value
-
     aware_datetime = timezone.make_aware(
         datetime.combine(metric_value.time, datetime.min.time())
     )
 
-    if not getattr(predicted_value, 'predictor', None):
+    if not getattr(metric_value, 'predictor', None):
         lock_key = f"predictor_lock_{metric_value.h3_index}_"
         with redis_lock(lock_key) as lock_acquired:
             if not lock_acquired:
                 # If we couldn't acquire the lock, we skip this metric
                 return
         try:
-            predicted_value.predictor = Predictor.objects.get_not_expired(
+            metric_value.predictor = Predictor.objects.get_not_expired(
                 region_id=metric_value.h3_index, date=aware_datetime)
         except Predictor.DoesNotExist:
             try:
                 with transaction.atomic():
-                    predicted_value.predictor = Predictor.objects.create(
+                    metric_value.predictor = Predictor.objects.create(
                         region_id=metric_value.h3_index,
                         last_training_date=aware_datetime,
                     )
             except IntegrityError:
                 # If the IntegrityError is raised, it means that another process has already created the predictor
                 # and we can safely ignore this error.
-                predicted_value.predictor = Predictor.objects.get_not_expired(
+                metric_value.predictor = Predictor.objects.get_not_expired(
                     region_id=metric_value.h3_index, date=aware_datetime)
         finally:
-            predicted_value.save(update_fields=['predictor'])
+            metric_value.save(update_fields=['predictor'])
 
-    results = predicted_value.predictor.predict(dates=[metric_value.time,])
+    results = metric_value.predictor.predict(dates=[metric_value.time,])
     if not results:
         return
     try:
         if result := results[0]:
-            predicted_value.predicted_value = result['yhat']
-            predicted_value.upper_confidence_band = result['yhat_upper']
-            predicted_value.lower_confidence_band = result['yhat_lower']
-            predicted_value.save()
+            metric_value.predicted_value = result['yhat']
+            metric_value.upper_confidence_band = result['yhat_upper']
+            metric_value.lower_confidence_band = result['yhat_lower']
+            metric_value.anomaly_degree = metric_value.calculate_anomaly_degree()
+            metric_value.save()
     except IndexError:
         pass
 

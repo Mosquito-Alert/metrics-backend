@@ -123,20 +123,20 @@ class MetricValue(H3ModelMixin):
         help_text=_('The predictor associated to the predicted value.')
     )
     predicted_value = RealField(
-        null=False,
-        blank=False,
+        null=True,
+        blank=True,
         verbose_name=_('Value'),
         help_text=_('The predicted value.')
     )
     lower_confidence_band = RealField(
-        null=False,
-        blank=False,
+        null=True,
+        blank=True,
         verbose_name=_('Lower Confidence Band'),
         help_text=_('The lower confidence band of the predicted value.')
     )
     upper_confidence_band = RealField(
-        null=False,
-        blank=False,
+        null=True,
+        blank=True,
         verbose_name=_('Upper Confidence Band'),
         help_text=_('The upper confidence band of the predicted value.')
     )
@@ -155,7 +155,7 @@ class MetricValue(H3ModelMixin):
         """
         refresh_prediction_task.delay(self.id, refresh_progress=refresh_progress)
 
-    def calculate_anomaly_degree(self) -> None:
+    def calculate_anomaly_degree(self) -> Optional[float]:
         """
         Calculates the anomaly degree based on the value and confidence bands.
         """
@@ -189,9 +189,6 @@ class MetricValue(H3ModelMixin):
         if self.value is not None and math.isnan(self.value):
             self.value = None
 
-        # Calculate the anomaly degree before saving
-        self.anomaly_degree = self.calculate_anomaly_degree()
-
         # Save the initial Metric with the prediction values and the predictor to None.
         super().save(*args, **kwargs)
 
@@ -214,7 +211,7 @@ class MetricValue(H3ModelMixin):
         verbose_name_plural = _('Values')
 
     def __str__(self):
-        return f"{self.metric.name} on {self.date} for {self.h3_index}: {self.value}"
+        return f"{self.metric.name} on {self.time} for {self.h3_index}: {self.value}"
 
 
 class PredictorConfig(models.Model):

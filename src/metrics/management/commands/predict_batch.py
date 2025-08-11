@@ -1,8 +1,8 @@
 from django.core.management.base import BaseCommand
 from datetime import datetime
 
-from src.predictions.models import Boundary
-from src.predictions.tasks import predict_batch_task
+from src.metrics.models import Boundary
+from src.metrics.tasks import predict_batch_task
 
 
 class Command(BaseCommand):
@@ -48,9 +48,10 @@ class Command(BaseCommand):
         h3_index = options.get('h3_index')
         metric_id = options.get('metric_id')
 
-        boundary_qs = Boundary.objects.all()
-        if h3_index:
-            boundary_qs = boundary_qs.filter(h3_index=h3_index)
+        # TODO: Now we don't have a table with all the geographic boundaries, so this needs to be adapted
+        # boundary_qs = Boundary.objects.all()
+        # if h3_index:
+        #     boundary_qs = boundary_qs.filter(h3_index=h3_index)
 
-        for boundary in boundary_qs.iterator(chunk_size=1000):
-            predict_batch_task.delay(from_date=from_date, to_date=to_date, boundary_id=boundary.id, metric_id=metric_id)
+        # for boundary in boundary_qs.iterator(chunk_size=1000):
+        #     predict_batch_task.delay(from_date=from_date, to_date=to_date, boundary_id=boundary.id, metric_id=metric_id)

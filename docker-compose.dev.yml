@@ -12,7 +12,7 @@ services:
       - anomaly-detection-local-db_data_backups:/backups
     env_file:
       - ./.envs/.local/.postgres.env
-    # command: "-c log_statement=all"
+    command: "-c log_statement=all"
 
   redis:
     image: redis:7.0.15

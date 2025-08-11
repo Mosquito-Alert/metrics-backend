@@ -5,17 +5,15 @@ import pandas as pd
 
 from django.contrib.postgres.fields import ArrayField
 from django.db import models, transaction
-from django.db.models import Case, F, Value, When
 from django.utils.translation import gettext_lazy as _
 from prophet import Prophet
 from prophet.plot import seasonality_plot_df
 from prophet.serialize import model_to_json as prophet_model_to_json
 from rest_framework.fields import MaxValueValidator, MinValueValidator
-from timescale.db.models.fields import TimescaleDateTimeField
 
 
-from src.predictions.managers import PredictorManager
-from src.predictions.tasks import refresh_prediction_task
+from src.metrics.managers import PredictorManager
+from src.metrics.tasks import refresh_prediction_task
 from src.utils.postgresTypes import RealField
 
 
@@ -26,44 +24,32 @@ class PredictionResult(TypedDict):
     yhat_lower: float
 
 
-class RawValueType(models.IntegerChoices):
+class MetricValueType(models.IntegerChoices):
     """
-    Type of the raw value.
+    Type of the metric value.
     """
     REANALYSIS = 1, _('Reanalysis')
     FORECAST = 2, _('Forecast')
 
 
-class Boundary(models.Model):
+class H3ModelMixin(models.Model):
     """
-    Model to store the boundaries of a metric.
+    Model mixin to store the h3 index of a metric.
     """
-    # CHECK: Maybe use string
-    _h3_index = models.BigIntegerField(
+    h3_index = models.BigIntegerField(
         db_column='h3_index',
         null=False,
         blank=False,
         verbose_name=_('H3 Index'),
         help_text=_(
-            'The H3 index of the raw value boundary, used for spatial queries. '
-            'This is stored as a bigint to avoid issues with large indices, '
-            'so it should be converted to/from hex strings.'
+            'The H3 index of the metric value boundary, used for spatial queries. '
+            'This is stored as a bigInt to avoid issues with large indices, '
+            'so it should be converted to/from hex strings if necessary.'
         ),
     )
 
-    @property
-    def h3_index(self) -> str:
-        """Return H3 index as a hex string."""
-        return f"{self._h3_index:x}"  # lowercase hex without 0x
-
-    @h3_index.setter
-    def h3_index(self, hex_value: str):
-        """Store H3 index from a hex string."""
-        self._h3_index = int(hex_value, 16)
-
     class Meta:
-        verbose_name = _('Boundary')
-        verbose_name_plural = _('Boundaries')
+        abstract = True
 
 
 class Metric(models.Model):
@@ -87,110 +73,56 @@ class Metric(models.Model):
         return self.name
 
 
-class RawValue(models.Model):
+class MetricValue(H3ModelMixin):
     """
-    Model to store the raw values of a metric.
+    Model to store the raw and predicted values of a metric.
     """
+    pk = models.CompositePrimaryKey(
+        'metric', 'h3_index', 'time',
+        verbose_name=_('Primary Key'),
+        help_text=_('The primary key of the metric value, composed by the metric, h3 index and time.')
+    )
     metric = models.ForeignKey(
         Metric,
         on_delete=models.CASCADE,
-        related_name='raw_values',
+        related_name='values',
         verbose_name=_('Metric'),
-        help_text=_('The metric associated to the raw value.')
+        help_text=_('The metric associated to the value.')
     )
-    time = TimescaleDateTimeField(
+    time = models.DateTimeField(
         null=False,
         blank=False,
         verbose_name=_('Time'),
         help_text=_('The time in which the raw value was recorded.'),
-        # TODO: All the past data should be a single interval, and then, from today to the future, another.
-        interval='7 days',  # TimescaleDB specific, sets the time interval for the hypertable
     )
     value = RealField(
         null=False,
         blank=False,
         verbose_name=_('Value'),
-        help_text=_('The actual value of the raw data. The number is multiplied by 1000.'),
+        help_text=_('The actual value of the raw data.'),
     )
     type = models.PositiveSmallIntegerField(
-        choices=RawValueType.choices,
+        choices=MetricValueType.choices,
         null=False,
         blank=False,
         verbose_name=_('Type'),
         help_text=_('The type of the raw value.')
     )
-    boundary = models.ForeignKey(
-        Boundary,
-        on_delete=models.CASCADE,
-        related_name='raw_values',
-        null=False,
-        blank=False,
-        verbose_name=_('Boundary'),
-        help_text=_('The boundary associated to the raw value. This is used for spatial queries.'),
-    )
-
-    # CHECK: These methods should be in this model?
-    def refresh_prediction(self, refresh_progress: bool = True) -> None:
-        """
-        (Async) Invokes the predictor and assign the Prediction fields.
-        """
-        refresh_prediction_task.delay(self.id, refresh_progress=refresh_progress)
-
-    def save(self, *args, **kwargs):
-        is_adding = self._state.adding  # A new object is being created
-
-        if self.value is not None and math.isnan(self.value):
-            self.value = None
-
-        # Save the initial Metric with the prediction values and the predictor to None.
-        super().save(*args, **kwargs)
-
-        # Assign a predictor to the Metric and set the prediction values.
-        if is_adding and self.metric.predictor_config.is_enabled:
-            # If the Metric is being created, we need to assign a predictor and refresh the prediction
-            self.refresh_prediction()
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=['metric', 'boundary', 'time'], name='unique_metric'
-            )
-        ]
-        ordering = ['boundary', '-time']
-        indexes = [
-            models.Index(fields=['boundary', 'time']),
-        ]
-        verbose_name = _('Raw Value')
-        verbose_name_plural = _('Raw Values')
-
-    def __str__(self):
-        return f"{self.metric.name} on {self.date} for {self.boundary.h3_index}: {self.value}"
-
-
-class PredictedValue(models.Model):
-    """
-    Model to store the predicted values of a metric.
-    """
-    # Relation OneToOne with RawValue. This is the Primary Key.
-    raw_value = models.OneToOneField(
-        RawValue,
-        on_delete=models.CASCADE,
-        primary_key=True,
-        unique=True,
-        related_name='predicted_value',
-        verbose_name=_('Raw Value'),
-        help_text=_('The raw value associated to the predicted value.')
-    )
+    # Predictor fields
+    # NOTE: We can't separate these fields into a different model because TimescaleDB needs a composite
+    # primary key to work properly, and having a separate model would need three additional fields
+    # (metric_id, h3_index, time) to be able to link that model with the MetricValue model.
+    # It is preferible then to have these fields nullable (null takes only 1 bit per nullable field).
     predictor = models.ForeignKey(
         'Predictor',
         on_delete=models.CASCADE,
-        null=True,  # CHECK:
-        blank=True,  # CHECK:
-        related_name='predicted_values',
+        null=True,
+        blank=True,
+        related_name='values',
         verbose_name=_('Predictor'),
         help_text=_('The predictor associated to the predicted value.')
     )
-    value = RealField(
+    predicted_value = RealField(
         null=False,
         blank=False,
         verbose_name=_('Value'),
@@ -208,49 +140,81 @@ class PredictedValue(models.Model):
         verbose_name=_('Upper Confidence Band'),
         help_text=_('The upper confidence band of the predicted value.')
     )
-    anomaly_degree = models.GeneratedField(
-        expression=Case(
-            When(predicted_value__isnull=True, then=Value(None)),
-            default=Case(
-                # Handle value == 0 case explicitly
-                When(
-                    value=0,
-                    then=Case(
-                        When(upper_confidence_band__lt=0, then=Value(1.0)),
-                        When(lower_confidence_band__gt=0, then=Value(-1.0)),
-                        default=Value(0.0),
-                        output_field=RealField()
-                    )
-                ),
-                # Normal anomaly detection cases
-                When(value__gt=F('upper_confidence_band'),
-                     then=(F('raw_value__value') - F('upper_confidence_band')) / F('raw_value__value')),
-                When(value__lt=F('lower_confidence_band'),
-                     then=(F('raw_value__value') - F('lower_confidence_band')) / F('raw_value__value')),
-                default=Value(0.0),
-                output_field=RealField(),
-            ),
-        ),
-        output_field=RealField(),
-        # If db_persist is set to false, then the field will not be persisted in the database
-        # and the computed value will be calculated on the READ queries, which is not optimal.
-        db_persist=True,
-        blank=True,
+    anomaly_degree = RealField(
         null=True,
-        verbose_name=_('Anomaly degree'),
-        help_text=_('The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the \
-            highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that \
-            these is no anomaly. This value will be estimated at creation.')
+        blank=True,
+        verbose_name=_('Anomaly Degree'),
+        help_text=_('The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the '
+                    'highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that '
+                    'there is no anomaly. This value will be estimated at creation.')
     )
 
-    def __str__(self):
-        return f"Predicted Value for {self.raw_value.metric.name} on {self.raw_value.time} for " \
-            f"{self.raw_value.boundary.h3_index}: {self.value}"
+    def refresh_prediction(self, refresh_progress: bool = True) -> None:
+        """
+        (Async) Invokes the predictor and assign the Prediction fields.
+        """
+        refresh_prediction_task.delay(self.id, refresh_progress=refresh_progress)
+
+    def calculate_anomaly_degree(self) -> None:
+        """
+        Calculates the anomaly degree based on the value and confidence bands.
+        """
+        anomaly_degree = None
+        if self.value is None:
+            anomaly_degree = None
+        else:
+            if self.value == 0:
+                # Handle the value == 0 case explicitly
+                if self.upper_confidence_band < 0:
+                    anomaly_degree = 1.0
+                elif self.lower_confidence_band > 0:
+                    anomaly_degree = -1.0
+                else:
+                    anomaly_degree = 0.0
+            # Value above upper confidence band
+            elif self.value > self.upper_confidence_band:
+                anomaly_degree = (self.value - self.upper_confidence_band) / self.value
+            # Value below lower confidence band
+            elif self.value < self.lower_confidence_band:
+                anomaly_degree = (self.value - self.lower_confidence_band) / self.value
+            # Value within confidence bands
+            else:
+                anomaly_degree = 0.0
+
+        return anomaly_degree
+
+    def save(self, *args, **kwargs):
+        is_adding = self._state.adding  # A new object is being created
+
+        if self.value is not None and math.isnan(self.value):
+            self.value = None
+
+        # Calculate the anomaly degree before saving
+        self.anomaly_degree = self.calculate_anomaly_degree()
+
+        # Save the initial Metric with the prediction values and the predictor to None.
+        super().save(*args, **kwargs)
+
+        # Assign a predictor to the Metric and set the prediction values.
+        if is_adding and self.metric.predictor_config.is_enabled:
+            # If the Metric is being created, we need to assign a predictor and refresh the prediction
+            self.refresh_prediction()
 
     class Meta:
-        ordering = ['raw_value']
-        verbose_name = _('Predicted Value')
-        verbose_name_plural = _('Predicted Values')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['metric', 'h3_index', 'time'], name='unique_metric'
+            )
+        ]
+        ordering = ['metric', 'h3_index', '-time']
+        indexes = [
+            models.Index(fields=['metric', 'h3_index', 'time'],)
+        ]
+        verbose_name = _('Value')
+        verbose_name_plural = _('Values')
+
+    def __str__(self):
+        return f"{self.metric.name} on {self.date} for {self.h3_index}: {self.value}"
 
 
 class PredictorConfig(models.Model):
@@ -312,7 +276,7 @@ class PredictorConfig(models.Model):
         verbose_name_plural = _('Predictor Configs')
 
 
-class Predictor(models.Model):
+class Predictor(H3ModelMixin):
     """
     Model to store the predictor model and the prediction results.
     """
@@ -322,15 +286,6 @@ class Predictor(models.Model):
         related_name='predictors',
         verbose_name=_('Metric'),
         help_text=_('The metric associated to the predictor.')
-    )
-    boundary = models.ForeignKey(
-        Boundary,
-        on_delete=models.CASCADE,
-        related_name='predictors',
-        null=False,  # CHECK:
-        blank=False,  # CHECK:
-        verbose_name=_('Boundary'),
-        help_text=_('The boundary associated to the predictor. This is used for spatial queries.'),
     )
     last_training_date = models.DateTimeField(
         null=False,
@@ -436,8 +391,8 @@ class Predictor(models.Model):
             return
 
         # NOTE: Do not delete the order by date, as it is needed for the Prophet model.
-        metric_value_qs = self.metric.raw_values.filter(
-            time__lt=self.last_training_date, boundary=self.boundary).order_by('time')
+        metric_value_qs = self.metric.values.filter(
+            time__lt=self.last_training_date, h3_index=self.h3_index).order_by('time')
 
         df = pd.DataFrame.from_records(
             ({'ds': obj.date, 'y': obj.value} for obj in metric_value_qs.iterator())  # Generator
@@ -496,16 +451,16 @@ class Predictor(models.Model):
         self.save()
 
     def __str__(self):
-        return f"Predictor for {self.metric.name} on {self.boundary.h3_index} trained at {self.last_training_date}"
+        return f"Predictor for {self.metric.name} on {self.h3_index} trained at {self.last_training_date}"
 
     class Meta:
-        ordering = ['metric', 'boundary', '-last_training_date']
+        ordering = ['metric', 'h3_index', '-last_training_date']
         indexes = [
-            models.Index(fields=['metric', 'boundary', 'last_training_date']),
+            models.Index(fields=['metric', 'h3_index', 'last_training_date']),
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=['metric', 'boundary', 'last_training_date'], name='unique_predictor'
+                fields=['metric', 'h3_index', 'last_training_date'], name='unique_predictor'
             )
         ]
         verbose_name = _('Predictor')
@@ -535,17 +490,15 @@ class MetricPredictionProgress(models.Model):
     )
 
     @classmethod
-    def refresh(cls, time: datetime):
+    def refresh(cls, metric: Metric, time: datetime) -> None:
         with transaction.atomic():
-            total_raw_values = RawValue.objects.filter(time__date=time.date()).count()
-            total_predicted = PredictedValue.objects.filter(
-                raw_value__time__date=time,
-                value__isnull=False
-            ).count()
+            metric_values_qs = MetricValue.objects.filter(metric=metric, time__date=time.date())
+            total = metric_values_qs.count()
+            total_finished = metric_values_qs.filter(predicted_value__isnull=False).count()
 
             success_percentage = 0
-            if total_raw_values > 0:
-                success_percentage = total_predicted / total_raw_values
+            if total > 0:
+                success_percentage = total_finished / total
 
             cls.objects.update_or_create(
                 time=time,

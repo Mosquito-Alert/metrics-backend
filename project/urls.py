@@ -34,8 +34,7 @@ urlpatterns = [
         name='swagger-ui'
     ),
     path(f'{base_url}/docs/redoc/', SpectacularRedocView.as_view(url_name='api-schema'), name='redoc'),
-    path(f'{base_url}/', include('src.predictions.urls', namespace='predictions')),
-    path(f'{base_url}/', include('src.regions.urls', namespace='regions')),
+    path(f'{base_url}/', include('src.metrics.urls', namespace='metrics')),
 ]
 
 

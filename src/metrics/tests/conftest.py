@@ -5,7 +5,7 @@ from django.contrib.gis.geos import MultiPolygon, Polygon
 
 from src.regions.models import (AutonomousCommunity, Country,
                                 Municipality, Province)
-from src.predictions.models import Metric, MetricExecution, MetricSeasonality
+from src.metrics.models import Metric, MetricExecution, MetricSeasonality
 
 
 @pytest.fixture

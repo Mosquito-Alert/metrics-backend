@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class PredictionsConfig(AppConfig):
+class MetricsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'src.predictions'
+    name = 'src.metrics'

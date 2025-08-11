@@ -50,8 +50,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     'src.utils',
-    'src.regions',
-    'src.predictions',
+    'src.metrics',
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -80,7 +79,7 @@ MIDDLEWARE = [
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
 DATABASES = {
     'default': {
-        'ENGINE': 'timescale.db.backends.postgis',
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         'NAME': os.environ.get('POSTGRES_DB', 'metrics'),

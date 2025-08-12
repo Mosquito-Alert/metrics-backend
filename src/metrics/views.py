@@ -1,7 +1,6 @@
 
 
-from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action
@@ -11,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
 from src.metrics.models import Metric, MetricPredictionProgress, MetricValue
-from src.metrics import serializers
+from src.metrics import filters, serializers
 
 
 class MetricViewSet(GenericViewSet, ListModelMixin):
@@ -23,44 +22,9 @@ class MetricViewSet(GenericViewSet, ListModelMixin):
     permission_classes = [AllowAny]
     lookup_url_kwarg = "id"
 
-
-@extend_schema_view(
-    list=extend_schema(
-        parameters=[
-            OpenApiParameter(
-                name='from',
-                type=OpenApiTypes.DATETIME,
-                description='Filter results starting from this datetime.',
-                required=False,
-            ),
-            OpenApiParameter(
-                name='to',
-                type=OpenApiTypes.DATETIME,
-                description='Filter results ending at this datetime.',
-                required=False,
-            ),
-            OpenApiParameter(
-                name='h3_index',
-                type=OpenApiTypes.STR,
-                description='Filter result by this H3 Index.',
-                required=False,
-            ),
-        ]
-    ),
-    get_last_date=extend_schema(operation_id="metrics_last_date_retrieve"),
-    post_batch_create=extend_schema(responses={201: OpenApiResponse(description='File processes successfully.')})
-)
-class MetricValueViewSet(GenericViewSet, ListModelMixin):
-    """
-    ViewSet for MetricValue model.
-    """
-    queryset = MetricValue.objects.all()
-    serializer_class = serializers.MetricValueSerializer
-    permission_classes = [AllowAny]
-
     @action(
         methods=['GET'],
-        detail=True,  # TODO: I not a single PK but a composite key (metric, h3_index, time)
+        detail=True,
         url_path='seasonality',
         url_name='seasonality',
         serializer_class=serializers.SeasonalitySerializer
@@ -105,6 +69,20 @@ class MetricValueViewSet(GenericViewSet, ListModelMixin):
              f'{metric_value.h3_index}, time: {metric_value.time}).'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+
+@extend_schema_view(
+    get_last_date=extend_schema(operation_id="metrics_last_date_retrieve"),
+    post_batch_create=extend_schema(responses={201: OpenApiResponse(description='File processes successfully.')})
+)
+class MetricValueViewSet(GenericViewSet, ListModelMixin):
+    """
+    ViewSet for MetricValue model.
+    """
+    queryset = MetricValue.objects.all()
+    serializer_class = serializers.MetricValueSerializer
+    permission_classes = [AllowAny]
+    filterset_class = filters.MetricValueFilter
 
     @extend_schema(
         responses=serializers.LastMetricDateSerializer(many=True),
@@ -184,24 +162,3 @@ class MetricValueViewSet(GenericViewSet, ListModelMixin):
             {"detail": f"File processed successfully. {len(created_metrics_values)} metric values created"},
             status=status.HTTP_201_CREATED
         )
-
-    def get_queryset(self):
-        """
-        Optionally restricts the returned values to a given H3 index, type, or date range.
-        """
-        queryset = super().get_queryset()
-        h3_index = self.request.query_params.get('h3_index')
-        value_type = self.request.query_params.get('type')
-        from_datetime = self.request.query_params.get('from')
-        to_datetime = self.request.query_params.get('to')
-
-        if h3_index:
-            queryset = queryset.filter(h3_index=h3_index)
-        if value_type:
-            queryset = queryset.filter(type=value_type)
-        if from_datetime:
-            queryset = queryset.filter(time__gte=from_datetime)
-        if to_datetime:
-            queryset = queryset.filter(time__lte=to_datetime)
-
-        return queryset

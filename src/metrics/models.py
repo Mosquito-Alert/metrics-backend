@@ -13,7 +13,7 @@ from rest_framework.fields import MaxValueValidator, MinValueValidator
 
 from src.metrics.managers import PredictorManager
 from src.metrics.tasks import refresh_prediction_task
-from src.utils.databaseFeatures import H3Field, H3IsValidCell, RealField
+from src.utils.database_features import H3Field, H3IsValidCell, RealField
 
 
 class PredictionResult(TypedDict):

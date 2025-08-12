@@ -23,14 +23,6 @@ class PredictionResult(TypedDict):
     yhat_lower: float
 
 
-class MetricValueType(models.IntegerChoices):
-    """
-    Type of the metric value.
-    """
-    REANALYSIS = 1, _('Reanalysis')
-    FORECAST = 2, _('Forecast')
-
-
 class H3Model(models.Model):
     """
     Model mixin to store the h3 index of a metric.
@@ -75,6 +67,13 @@ class MetricValue(H3Model):
     """
     Model to store the raw and predicted values of a metric.
     """
+    class MetricValueType(models.IntegerChoices):
+        """
+        Type of the metric value.
+        """
+        REANALYSIS = 1, _('Reanalysis')
+        FORECAST = 2, _('Forecast')
+
     pk = models.CompositePrimaryKey(
         'metric', 'h3_index', 'time',
         verbose_name=_('Primary Key'),

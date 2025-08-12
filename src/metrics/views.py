@@ -21,6 +21,7 @@ class MetricViewSet(GenericViewSet, ListModelMixin):
     queryset = Metric.objects.all()
     serializer_class = serializers.MetricSerializer
     permission_classes = [AllowAny]
+    lookup_url_kwarg = "id"
 
 
 @extend_schema_view(
@@ -173,8 +174,8 @@ class MetricValueViewSet(GenericViewSet, ListModelMixin):
         where "h3_index" (hexadecimal string) is the H3 index of the cell and "value" (float) is the estimated value
         for that cell.\n
         """
-        metric_pk = kwargs.get('metric_pk')
-        serializer = self.get_serializer(data=request.FILES, context={'metric_pk': metric_pk})
+        metric_id = kwargs.get('metric_id')
+        serializer = self.get_serializer(data=request.FILES, context={'metric_id': metric_id})
         serializer.is_valid(raise_exception=True)
 
         created_metrics_values = serializer.save()

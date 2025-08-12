@@ -26,14 +26,30 @@ class MetricValueSerializer(ModelSerializer):
     """
     Serializer for the Metric Values.
     """
-    prediction = serializers.SerializerMethodField()
-    type = serializers.SerializerMethodField()
+    class MetricValuePredictorSerializer(serializers.ModelSerializer):
+        def to_representation(self, instance):
+            if self.allow_null and instance.predicted_value is None:
+                return None
+            return super().to_representation(instance)
 
-    def get_type(self, obj):
-        """
-        Returns the type of the metric value as a string.
-        """
-        return obj.get_type_display()
+        class Meta:
+            model = models.MetricValue
+            fields = ['value', 'lower_confidence_band', 'upper_confidence_band', 'anomaly_degree']
+            extra_kwargs = {
+                'value': {'source': 'predicted_value', 'required': True, 'allow_null': False},
+                'lower_confidence_band': {'required': True, 'allow_null': False},
+                'upper_confidence_band': {'required': True, 'allow_null': False},
+                'anomaly_degree': {'required': True, 'allow_null': False}
+
+            }
+
+    prediction = MetricValuePredictorSerializer(source='*', read_only=True, allow_null=True)
+    type = serializers.ChoiceField(choices=[x.lower() for x in models.MetricValue.MetricValueType.names])
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret['type'] = [x.name.lower() for x in models.MetricValue.MetricValueType if x.value == instance.type][0]
+        return ret
 
     def get_prediction(self, obj):
         """
@@ -50,7 +66,7 @@ class MetricValueSerializer(ModelSerializer):
 
     class Meta:
         model = models.MetricValue
-        fields = ['metric', 'time', 'value', 'type', 'h3_index', 'prediction']
+        fields = ['h3_index', 'time', 'type', 'value',  'prediction']
 
 
 class SeasonalitySerializer(ModelSerializer):
@@ -129,11 +145,11 @@ class MetricFileSerializer(Serializer):
         # Validate that the type of the metric is one of the accepted values
         try:
             metric_type = match.group(1)
-            parsed_type = models.MetricValueType[metric_type.upper()].value
+            parsed_type = models.MetricValue.MetricValueType[metric_type.upper()].value
         except KeyError:
             raise ValidationError(
                 f"Invalid metric type in filename: {metric_type}. Accepted values are: "
-                f"{', '.join(models.MetricValueType._value2member_map_.keys())}")
+                f"{', '.join(models.MetricValue.MetricValueType._value2member_map_.keys())}")
         self.context['filename_type'] = parsed_type
 
         return file
@@ -145,7 +161,7 @@ class MetricFileSerializer(Serializer):
         file = validated_data['file']
         time = self.context.get('filename_datetime')
         type = self.context.get('filename_type')
-        metric_pk = self.context.get('metric_pk')
+        metric_id = self.context.get('metric_id')
 
         try:
             df = pd.read_csv(file)
@@ -171,7 +187,7 @@ class MetricFileSerializer(Serializer):
                 raise ValidationError(f"Invalid H3 index at row {idx + 1}: {row['h3_index']}. Needs to be hexadecimal.")
             metrics_to_create.append(
                 models.MetricValue(
-                    metric_id=metric_pk,
+                    metric_id=metric_id,
                     h3_index=row['h3_index'],
                     time=time,
                     value=row['value'] if not math.isnan(row['value']) else None,

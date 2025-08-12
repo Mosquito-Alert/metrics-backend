@@ -1,5 +1,13 @@
+import math
+import re
+from datetime import datetime, timezone
+from dateutil import parser
+import h3
+import pandas as pd
+
 from rest_framework import serializers
 from rest_framework.serializers import (ModelSerializer, Serializer)
+from rest_framework.exceptions import ValidationError
 
 from . import models
 
@@ -19,12 +27,19 @@ class MetricValueSerializer(ModelSerializer):
     Serializer for the Metric Values.
     """
     prediction = serializers.SerializerMethodField()
+    type = serializers.SerializerMethodField()
+
+    def get_type(self, obj):
+        """
+        Returns the type of the metric value as a string.
+        """
+        return obj.get_type_display()
 
     def get_prediction(self, obj):
         """
         Returns the predicted values for the metric value if available.
         """
-        if hasattr(obj, 'predicted_value'):
+        if hasattr(obj, 'predicted_value') and obj.predicted_value is not None:
             return {
                 'value': obj.predicted_value,
                 'lower_confidence_band': obj.lower_confidence_band,
@@ -70,83 +85,109 @@ class LastMetricDateSerializer(Serializer):
     time = serializers.DateTimeField()
 
 
-# class MetricFileSerializer(Serializer):
-#     """
-#     Serializer for uploading a file with a batch of metrics.
-#     """
-#     file = serializers.FileField()
+class MetricFileSerializer(Serializer):
+    """
+    Serializer for uploading a file with a batch of metrics.
+    """
+    file = serializers.FileField()
 
-#     def validate_file(self, file):
-#         """
-#         Validate if the file is a CSV file and has the correct format.
-#         """
-#         # Check content type and extension
-#         if file.content_type != 'text/csv':
-#             raise ValidationError('Uploaded file must be a CSV file.')
-#         if not file.name.endswith('.csv'):
-#             raise ValidationError('File extension must be .csv')
+    def validate_file(self, file):
+        """
+        Validate if the file is a CSV file and has the correct format.
+        """
+        # Check content type and extension
+        if file.content_type != 'text/csv':
+            raise ValidationError('Uploaded file must be a CSV file.')
+        if not file.name.endswith('.csv'):
+            raise ValidationError('File extension must be .csv')
 
-#         # Validate filename pattern
-#         pattern = r'^bites_(\d{4}-\d{2}-\d{2})\.csv$'
-#         match = re.match(pattern, file.name)
-#         if not match:
-#             raise ValidationError('Filename must match the format: bites_YYYY-MM-DD.csv')
+        # Validate filename pattern
+        pattern = r'^([a-zA-Z\-]+)_((?:\d{4}-\d{2}-\d{2})(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?)\.csv$'
+        match = re.match(pattern, file.name)
+        if not match:
+            raise ValidationError('Filename must match the format: {type}_YYYY-MM-DD[TXX.XX.XXXZ].csv')
 
-#         # Validate that date part is a real, valid date
-#         date_str = match.group(1)
-#         try:
-#             parsed_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-#             if parsed_date > datetime.now().date():
-#                 raise ValidationError('Date cannot be in the future.')
-#         except ValueError:
-#             raise ValidationError(f"Invalid date in filename: {date_str}")
+        # Validate that timedate part is a real valid timedate
+        try:
+            date_str = match.group(2)
+            # Parse ISO 8601 date/time
+            parsed_datetime = parser.isoparse(date_str)
 
-#         # Store the extracted date in validated_data
-#         self.context['filename_date'] = parsed_date
+            # Ensure it's timezone-aware
+            if parsed_datetime.tzinfo is None:
+                parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
 
-#         return file
+            # Compare to now in UTC
+            if parsed_datetime > datetime.now(timezone.utc):
+                raise ValidationError('Date cannot be in the future.')
+        except ValueError:
+            raise ValidationError(f"Invalid date in filename: {date_str}")
 
-#     def create(self, validated_data):
-#         """
-#         Create the metrics contained in the CSV file.
-#         """
-#         file = validated_data['file']
-#         date = self.context.get('filename_date')
+        # Store the extracted date in validated_data
+        self.context['filename_datetime'] = parsed_datetime
 
-#         try:
-#             df = pd.read_csv(file)
-#         except Exception as e:
-#             raise ValidationError(f"Error reading CSV: {str(e)}")
+        # Validate that the type of the metric is one of the accepted values
+        try:
+            metric_type = match.group(1)
+            parsed_type = models.MetricValueType[metric_type.upper()].value
+        except KeyError:
+            raise ValidationError(
+                f"Invalid metric type in filename: {metric_type}. Accepted values are: "
+                f"{', '.join(models.MetricValueType._value2member_map_.keys())}")
+        self.context['filename_type'] = parsed_type
 
-#         # Validate content
-#         required_columns = {'code', 'est'}
-#         if not required_columns.issubset(df.columns):
-#             missing = required_columns - set(df.columns)
-#             raise ValidationError(f'Missing required columns: {", ".join(missing)}')
-#         if df.empty:
-#             raise ValidationError("The uploaded CSV file is empty — no rows found.")
+        return file
 
-#         region_code_to_id = {obj.code: obj.id for obj in Municipality.objects.all()}
+    def create(self, validated_data):
+        """
+        Create the metrics contained in the CSV file.
+        """
+        file = validated_data['file']
+        time = self.context.get('filename_datetime')
+        type = self.context.get('filename_type')
+        metric_pk = self.context.get('metric_pk')
 
-#         metrics_to_create = []
-#         for idx, row in df.iterrows():
-#             metrics_to_create.append(
-#                 Metric(
-#                     region_id=region_code_to_id[row['code']],
-#                     date=date,
-#                     value=row['est'] if not math.isnan(row['est']) else None,
-#                 )
-#             )
+        try:
+            df = pd.read_csv(file)
+        except Exception as e:
+            raise ValidationError(f"Error reading CSV: {str(e)}")
 
-#         # Create the metrics without the prediction values
-#         objs = Metric.objects.bulk_create(metrics_to_create, batch_size=2000)
+        # Validate content
+        required_columns = {'h3_index', 'value'}
+        if not required_columns.issubset(df.columns):
+            missing = required_columns - set(df.columns)
+            raise ValidationError(f'Missing required columns: {", ".join(missing)}')
+        if df.empty:
+            raise ValidationError("The uploaded CSV file is empty — no rows found.")
+        metrics_to_create = []
+        for idx, row in df.iterrows():
+            # Validate H3 index
+            try:
+                int(row['h3_index'], 16)
+                if h3.is_valid_cell(row['h3_index']) is False:
+                    raise ValidationError(
+                        f"Invalid H3 index at row {idx + 1}: {row['h3_index']}. It is not a valid H3 Cell.")
+            except ValueError:
+                raise ValidationError(f"Invalid H3 index at row {idx + 1}: {row['h3_index']}. Needs to be hexadecimal.")
+            metrics_to_create.append(
+                models.MetricValue(
+                    metric_id=metric_pk,
+                    h3_index=row['h3_index'],
+                    time=time,
+                    value=row['value'] if not math.isnan(row['value']) else None,
+                    type=type
+                )
+            )
 
-#         # Perform prediction for each metric
-#         for i, metric in enumerate(objs):
-#             # An update per metric won't represent a significant delta in progress,
-#             # so it will be updated each 10th metric prediction for performance reasons
-#             if i % 10 == 0 or i == len(objs) - 1:
-#                 metric.refresh_prediction(refresh_progress=True)
-#             else:
-#                 metric.refresh_prediction(refresh_progress=False)
-#         return objs
+        # Create the metrics without the prediction values
+        objs = models.MetricValue.objects.bulk_create(metrics_to_create, batch_size=2000)
+
+        # Perform prediction for each metric
+        for i, metric in enumerate(objs):
+            # An update per metric won't represent a significant delta in progress,
+            # so it will be updated each 10th metric prediction for performance reasons
+            if i % 10 == 0 or i == len(objs) - 1:
+                metric.refresh_prediction(refresh_progress=True)
+            else:
+                metric.refresh_prediction(refresh_progress=False)
+        return objs

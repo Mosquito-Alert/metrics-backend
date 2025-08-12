@@ -3,7 +3,7 @@
 import django.contrib.postgres.fields
 import django.core.validators
 import django.db.models.deletion
-import src.utils.postgresTypes
+import src.utils.databaseFeatures
 from django.db import migrations, models
 
 
@@ -47,13 +47,13 @@ class Migration(migrations.Migration):
             name='Predictor',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('h3_index', src.utils.postgresTypes.H3Field(help_text='The H3 index of the metric value boundary, used for spatial queries. This is stored as a bigInt to avoid issues with large indices, so it should be converted to/from hex strings if necessary.', verbose_name='H3 Index')),
+                ('h3_index', src.utils.databaseFeatures.H3Field(help_text='The H3 index of the metric value boundary, used for spatial queries. This is stored as a bigInt to avoid issues with large indices, so it should be converted to/from hex strings if necessary.', verbose_name='H3 Index')),
                 ('last_training_date', models.DateTimeField(help_text='The last value date used to train the model.', verbose_name='Last Training Date')),
                 ('weights', models.JSONField(blank=True, help_text='The predictor model itself, serialized as JSON.', null=True, verbose_name='Weights')),
-                ('yearly_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.postgresTypes.RealField(), blank=True, help_text='The predicted yearly seasonality for the metric.', null=True, size=365, verbose_name='Yearly Seasonality')),
-                ('weekly_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.postgresTypes.RealField(), blank=True, help_text='The predicted weekly seasonality for the metric.', null=True, size=7, verbose_name='Weekly Seasonality')),
-                ('daily_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.postgresTypes.RealField(), blank=True, help_text='The predicted daily seasonality for the metric.', null=True, size=24, verbose_name='Daily Seasonality')),
-                ('trend', django.contrib.postgres.fields.ArrayField(base_field=src.utils.postgresTypes.RealField(), blank=True, help_text='The predicted trend for the metric.', null=True, size=None, verbose_name='Trend')),
+                ('yearly_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.databaseFeatures.RealField(), blank=True, help_text='The predicted yearly seasonality for the metric.', null=True, size=365, verbose_name='Yearly Seasonality')),
+                ('weekly_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.databaseFeatures.RealField(), blank=True, help_text='The predicted weekly seasonality for the metric.', null=True, size=7, verbose_name='Weekly Seasonality')),
+                ('daily_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.databaseFeatures.RealField(), blank=True, help_text='The predicted daily seasonality for the metric.', null=True, size=24, verbose_name='Daily Seasonality')),
+                ('trend', django.contrib.postgres.fields.ArrayField(base_field=src.utils.databaseFeatures.RealField(), blank=True, help_text='The predicted trend for the metric.', null=True, size=None, verbose_name='Trend')),
                 ('metric', models.ForeignKey(help_text='The metric associated to the predictor.', on_delete=django.db.models.deletion.CASCADE, related_name='predictors', to='metrics.metric', verbose_name='Metric')),
             ],
             options={
@@ -65,15 +65,15 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='MetricValue',
             fields=[
-                ('h3_index', src.utils.postgresTypes.H3Field(help_text='The H3 index of the metric value boundary, used for spatial queries. This is stored as a bigInt to avoid issues with large indices, so it should be converted to/from hex strings if necessary.', verbose_name='H3 Index')),
+                ('h3_index', src.utils.databaseFeatures.H3Field(help_text='The H3 index of the metric value boundary, used for spatial queries. This is stored as a bigInt to avoid issues with large indices, so it should be converted to/from hex strings if necessary.', verbose_name='H3 Index')),
                 ('pk', models.CompositePrimaryKey('metric', 'h3_index', 'time', blank=True, editable=False, help_text='The primary key of the metric value, composed by the metric, h3 index and time.', primary_key=True, serialize=False, verbose_name='Primary Key')),
                 ('time', models.DateTimeField(help_text='The time in which the raw value was recorded.', verbose_name='Time')),
-                ('value', src.utils.postgresTypes.RealField(help_text='The actual value of the raw data.', verbose_name='Value')),
+                ('value', src.utils.databaseFeatures.RealField(help_text='The actual value of the raw data.', verbose_name='Value')),
                 ('type', models.PositiveSmallIntegerField(choices=[(1, 'Reanalysis'), (2, 'Forecast')], help_text='The type of the raw value.', verbose_name='Type')),
-                ('predicted_value', src.utils.postgresTypes.RealField(blank=True, help_text='The predicted value.', null=True, verbose_name='Value')),
-                ('lower_confidence_band', src.utils.postgresTypes.RealField(blank=True, help_text='The lower confidence band of the predicted value.', null=True, verbose_name='Lower Confidence Band')),
-                ('upper_confidence_band', src.utils.postgresTypes.RealField(blank=True, help_text='The upper confidence band of the predicted value.', null=True, verbose_name='Upper Confidence Band')),
-                ('anomaly_degree', src.utils.postgresTypes.RealField(blank=True, help_text='The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that there is no anomaly. This value will be estimated at creation.', null=True, verbose_name='Anomaly Degree')),
+                ('predicted_value', src.utils.databaseFeatures.RealField(blank=True, help_text='The predicted value.', null=True, verbose_name='Value')),
+                ('lower_confidence_band', src.utils.databaseFeatures.RealField(blank=True, help_text='The lower confidence band of the predicted value.', null=True, verbose_name='Lower Confidence Band')),
+                ('upper_confidence_band', src.utils.databaseFeatures.RealField(blank=True, help_text='The upper confidence band of the predicted value.', null=True, verbose_name='Upper Confidence Band')),
+                ('anomaly_degree', src.utils.databaseFeatures.RealField(blank=True, help_text='The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that there is no anomaly. This value will be estimated at creation.', null=True, verbose_name='Anomaly Degree')),
                 ('metric', models.ForeignKey(help_text='The metric associated to the value.', on_delete=django.db.models.deletion.CASCADE, related_name='values', to='metrics.metric', verbose_name='Metric')),
                 ('predictor', models.ForeignKey(blank=True, help_text='The predictor associated to the predicted value.', null=True, on_delete=django.db.models.deletion.CASCADE, related_name='values', to='metrics.predictor', verbose_name='Predictor')),
             ],
@@ -117,6 +117,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='metricvalue',
-            constraint=models.CheckConstraint(condition=src.utils.postgresTypes.H3IsValidCell(models.F('h3_index')), name='h3_index_must_be_valid'),
+            constraint=models.CheckConstraint(condition=src.utils.databaseFeatures.H3IsValidCell(models.F('h3_index')), name='h3_index_must_be_valid'),
         ),
     ]

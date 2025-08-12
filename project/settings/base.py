@@ -43,7 +43,7 @@ THIRD_PARTY_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'drf_spectacular',
-    'django_filters',
+    # 'django_filters',
     # 'django_hosts',
     "corsheaders",
 ]
@@ -177,7 +177,7 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'src.utils.pagination.StandardPagination',
     'DEFAULT_FILTER_BACKENDS': [
-        'django_filters.rest_framework.DjangoFilterBackend',
+        # 'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.OrderingFilter',
     ],
 }

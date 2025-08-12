@@ -8,14 +8,16 @@ from src.utils.redis_functions import redis_lock
 
 
 @shared_task
-def refresh_prediction_task(metric_value_id, refresh_progress=True):
+def refresh_prediction_task(metric_id, h3_index, time, refresh_progress=True):
     """
     Invokes the predictor and assign the Prediction fields.
     """
     from src.metrics.models import MetricPredictionProgress, Predictor, MetricValue
 
     try:
-        metric_value = MetricValue.objects.get(id=metric_value_id)
+        metric_value = MetricValue.objects.get(
+            metric_id=metric_id, h3_index=h3_index, time__date=time.date()
+        )
     except MetricValue.DoesNotExist:
         return
 

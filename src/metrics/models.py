@@ -13,7 +13,7 @@ from rest_framework.fields import MaxValueValidator, MinValueValidator
 
 from src.metrics.managers import PredictorManager
 from src.metrics.tasks import refresh_prediction_task
-from src.utils.postgresTypes import H3Field, H3IsValidCell, RealField
+from src.utils.databaseFeatures import H3Field, H3IsValidCell, RealField
 
 
 class PredictionResult(TypedDict):
@@ -151,7 +151,7 @@ class MetricValue(H3Model):
         """
         (Async) Invokes the predictor and assign the Prediction fields.
         """
-        refresh_prediction_task.delay(self.id, refresh_progress=refresh_progress)
+        refresh_prediction_task.delay(self.metric.id, self.h3_index, self.time, refresh_progress=refresh_progress)
 
     def calculate_anomaly_degree(self) -> Optional[float]:
         """

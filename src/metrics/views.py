@@ -1,11 +1,12 @@
 
 
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action
-from rest_framework.mixins import ListModelMixin, RetrieveModelMixin
-from rest_framework.permissions import AllowAny
+from rest_framework.mixins import ListModelMixin
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
@@ -45,8 +46,10 @@ class MetricViewSet(GenericViewSet, ListModelMixin):
             ),
         ]
     ),
+    get_last_date=extend_schema(operation_id="metrics_last_date_retrieve"),
+    post_batch_create=extend_schema(responses={201: OpenApiResponse(description='File processes successfully.')})
 )
-class ValueViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
+class MetricValueViewSet(GenericViewSet, ListModelMixin):
     """
     ViewSet for MetricValue model.
     """
@@ -56,7 +59,7 @@ class ValueViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
 
     @action(
         methods=['GET'],
-        detail=True,
+        detail=True,  # TODO: I not a single PK but a composite key (metric, h3_index, time)
         url_path='seasonality',
         url_name='seasonality',
         serializer_class=serializers.SeasonalitySerializer
@@ -144,6 +147,41 @@ class ValueViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
         return Response(
             {"detail": "No executions found."},
             status=status.HTTP_404_NOT_FOUND
+        )
+
+    @action(
+        methods=['POST'],
+        detail=False,
+        url_path='batch',
+        url_name='batch',
+        serializer_class=serializers.MetricFileSerializer,
+        authentication_classes=[TokenAuthentication],
+        permission_classes=[IsAuthenticated]
+    )
+    def post_batch_create(self, request, *args, **kwargs):
+        """
+        Action that creates a batch of metric values, and calls a Predictor model to predict values.\n
+
+        The endpoint accepts a **CSV file** with the following filename format:
+        "**{type}_YYYY-MM-DD[TXX.XX.XXXZ].csv**", where [TXX.XX.XXXZ] is the time part, which is optional, and
+        where "Z" could be replaced by the timezone (+XX:XX).
+        The type is the type of the metric (accepted values: "forecast", "reanalysis").
+        The Regex pattern is:
+        ^([a-zA-Z\\-]+)_((?:\\d{4}-\\d{2}-\\d{2})(?:T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2}))?)\\.csv$\n
+
+        The content of the CSV file should be in the format: **h3_index, value**,
+        where "h3_index" (hexadecimal string) is the H3 index of the cell and "value" (float) is the estimated value
+        for that cell.\n
+        """
+        metric_pk = kwargs.get('metric_pk')
+        serializer = self.get_serializer(data=request.FILES, context={'metric_pk': metric_pk})
+        serializer.is_valid(raise_exception=True)
+
+        created_metrics_values = serializer.save()
+
+        return Response(
+            {"detail": f"File processed successfully. {len(created_metrics_values)} metric values created"},
+            status=status.HTTP_201_CREATED
         )
 
     def get_queryset(self):

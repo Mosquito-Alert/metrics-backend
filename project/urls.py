@@ -22,12 +22,14 @@ from drf_spectacular.views import (SpectacularAPIView, SpectacularJSONAPIView,
 
 from django.conf import settings
 
-base_url = "api/v1"
+api_version = 'v2'
+base_url = f"api/{api_version}"
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path(f'{base_url}/schema/openapi.yml', SpectacularAPIView.as_view(api_version='v1'), name='api-schema'),
-    path(f'{base_url}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version='v1'), name='api-schema-json'),
+    path(f'{base_url}/schema/openapi.yml', SpectacularAPIView.as_view(api_version=api_version), name='api-schema'),
+    path(f'{base_url}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version=api_version),
+         name='api-schema-json'),
     path(
         f'{base_url}/docs/',
         SpectacularSwaggerView.as_view(url_name='api-schema',),

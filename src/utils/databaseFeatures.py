@@ -1,5 +1,5 @@
 """
-Define PostgreSQL types that aren't natively supported in Django for use in Django models.
+Define PostgreSQL features (types, constraints) that aren't natively supported in Django for use in Django models.
 """
 from django.db import models
 

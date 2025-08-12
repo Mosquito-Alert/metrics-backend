@@ -20,6 +20,11 @@ class MetricValueFilter(filters.FilterSet):
         label='Type',
     )
 
+    order_by = filters.OrderingFilter(
+        fields=(('time', 'time'),),
+        field_labels={'time': 'Time', }
+    )
+
     class Meta:
         model = models.MetricValue
         fields = ['h3_index', 'time', 'type']

@@ -178,7 +178,6 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'src.utils.pagination.StandardPagination',
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
-        'rest_framework.filters.OrderingFilter',
     ],
 }
 

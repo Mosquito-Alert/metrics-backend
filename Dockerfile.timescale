@@ -1,0 +1,26 @@
+# NOTE: timescaledb-ha includes PostGIS support; the timescaledb-postgis image is deprecated.
+# See https://hub.docker.com/r/timescale/timescaledb-postgis
+FROM timescale/timescaledb-ha:pg15
+
+USER root
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       build-essential \
+       cmake \
+       libpq-dev \
+       postgresql-server-dev-15 \
+       postgresql-15-h3 \
+       ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN pip install pgxnclient
+
+ENV PG_CONFIG=/usr/lib/postgresql/15/bin/pg_config
+
+RUN pgxn install h3
+
+RUN mkdir -p /docker-entrypoint-initdb.d
+COPY ./scripts/initdb-h3.sh /docker-entrypoint-initdb.d/20_h3.sh
+
+USER postgres

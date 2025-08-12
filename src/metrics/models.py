@@ -1,8 +1,8 @@
 import math
 from datetime import datetime
 from typing import List, Optional, TypedDict
-import pandas as pd
 
+import pandas as pd
 from django.contrib.postgres.fields import ArrayField
 from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
@@ -11,10 +11,9 @@ from prophet.plot import seasonality_plot_df
 from prophet.serialize import model_to_json as prophet_model_to_json
 from rest_framework.fields import MaxValueValidator, MinValueValidator
 
-
 from src.metrics.managers import PredictorManager
 from src.metrics.tasks import refresh_prediction_task
-from src.utils.postgresTypes import RealField
+from src.utils.postgresTypes import H3Field, H3IsValidCell, RealField
 
 
 class PredictionResult(TypedDict):
@@ -32,12 +31,11 @@ class MetricValueType(models.IntegerChoices):
     FORECAST = 2, _('Forecast')
 
 
-class H3ModelMixin(models.Model):
+class H3Model(models.Model):
     """
     Model mixin to store the h3 index of a metric.
     """
-    h3_index = models.BigIntegerField(
-        db_column='h3_index',
+    h3_index = H3Field(
         null=False,
         blank=False,
         verbose_name=_('H3 Index'),
@@ -73,7 +71,7 @@ class Metric(models.Model):
         return self.name
 
 
-class MetricValue(H3ModelMixin):
+class MetricValue(H3Model):
     """
     Model to store the raw and predicted values of a metric.
     """
@@ -160,9 +158,7 @@ class MetricValue(H3ModelMixin):
         Calculates the anomaly degree based on the value and confidence bands.
         """
         anomaly_degree = None
-        if self.value is None:
-            anomaly_degree = None
-        else:
+        if self.value is not None:
             if self.value == 0:
                 # Handle the value == 0 case explicitly
                 if self.upper_confidence_band < 0:
@@ -201,6 +197,10 @@ class MetricValue(H3ModelMixin):
         constraints = [
             models.UniqueConstraint(
                 fields=['metric', 'h3_index', 'time'], name='unique_metric'
+            ),
+            models.CheckConstraint(
+                check=H3IsValidCell(models.F('h3_index')),
+                name='h3_index_must_be_valid',
             )
         ]
         ordering = ['metric', 'h3_index', '-time']
@@ -273,7 +273,7 @@ class PredictorConfig(models.Model):
         verbose_name_plural = _('Predictor Configs')
 
 
-class Predictor(H3ModelMixin):
+class Predictor(H3Model):
     """
     Model to store the predictor model and the prediction results.
     """

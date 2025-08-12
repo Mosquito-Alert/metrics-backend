@@ -1,8 +1,11 @@
 services:
   db:
-    # NOTE: timescaledb-ha includes PostGIS support; the timescaledb-postgis image is deprecated.
-    # See https://hub.docker.com/r/timescale/timescaledb-postgis
-    image: timescale/timescaledb-ha:pg15
+    build:
+      context: .
+      dockerfile: Dockerfile.timescale
+      args:
+        - DEV=true
+    image: mosquito-alert/anomaly-detection-local-db
     container_name: anomaly-detection-local-db
     hostname: db
     ports:

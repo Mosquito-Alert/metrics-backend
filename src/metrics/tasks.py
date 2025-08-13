@@ -38,6 +38,7 @@ def refresh_prediction_task(metric_id, h3_index, time, refresh_progress=True):
             try:
                 with transaction.atomic():
                     metric_value.predictor = Predictor.objects.create(
+                        metric_id=metric_value.metric_id,
                         region_id=metric_value.h3_index,
                         last_training_date=aware_datetime,
                     )
@@ -45,6 +46,7 @@ def refresh_prediction_task(metric_id, h3_index, time, refresh_progress=True):
                 # If the IntegrityError is raised, it means that another process has already created the predictor
                 # and we can safely ignore this error.
                 metric_value.predictor = Predictor.objects.get_not_expired(
+                    metric_id=metric_value.metric_id,
                     region_id=metric_value.h3_index, date=aware_datetime)
         finally:
             metric_value.save(update_fields=['predictor'])

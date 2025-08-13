@@ -47,10 +47,40 @@ class Metric(models.Model):
     Model to store the different metrics.
     For example, the Bites Index, the Suitability Index, etc.
     """
+    class TimeDimensionStepType(models.IntegerChoices):
+        """
+        Time dimension step for the metric.
+        """
+        DAILY = 1, _('Daily')
+        HOURLY = 2, _('Hourly')
+
     name = models.CharField(max_length=255, unique=True, blank=False,
                             null=False,
                             verbose_name=_('Name'),
                             help_text=_('The name of the metric.'))
+    code = models.CharField(
+        max_length=32,
+        unique=True,
+        blank=False,
+        null=False,
+        verbose_name=_('Code'),
+        help_text=_('The code of the metric, used for identification purposes. Example: bites.'),
+    )
+    time_dimension_step = models.PositiveSmallIntegerField(
+        choices=TimeDimensionStepType.choices,
+        null=False,
+        blank=True,
+        default=TimeDimensionStepType.DAILY,
+        verbose_name=_('Time Dimension Step'),
+        help_text=_('The time dimension step for the metric.')
+    )
+    is_predictable = models.BooleanField(
+        blank=False,
+        null=False,
+        verbose_name=_('Is Predictable'),
+        help_text=_('Whether the metric is predictable or not. If true, the metric will have a predictor '
+                    'associated to it, and the values will be predicted.'),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -110,8 +140,10 @@ class MetricValue(H3Model):
     # primary key to work properly, and having a separate model would need three additional fields
     # (metric_id, h3_index, time) to be able to link that model with the MetricValue model.
     # It is preferible then to have these fields nullable (null takes only 1 bit per nullable field).
-    predictor = models.ForeignKey(
+    predictor = models.ForeignObject(
         'Predictor',
+        from_fields=['metric', 'h3_index'],
+        to_fields=['metric', 'h3_index'],
         on_delete=models.CASCADE,
         null=True,
         blank=True,
@@ -188,7 +220,7 @@ class MetricValue(H3Model):
         super().save(*args, **kwargs)
 
         # Assign a predictor to the Metric and set the prediction values.
-        if is_adding and self.metric.predictor_config.is_enabled:
+        if is_adding and self.metric.is_predictable:
             # If the Metric is being created, we need to assign a predictor and refresh the prediction
             self.refresh_prediction()
 
@@ -253,16 +285,6 @@ class PredictorConfig(models.Model):
         verbose_name=_('Growth'),
         help_text=_('The growth model to use for the predictor.'),
     )
-    is_enabled = models.BooleanField(
-        default=True,
-        blank=False,
-        null=False,
-        verbose_name=_('Is Enabled'),
-        help_text=_(
-            'Whether the predictor is enabled or not.'
-            'If disabled, the predictor will not be used for making predictions.'
-        ),
-    )
 
     def __str__(self):
         return f"Predictor Config for {self.metric.name}"
@@ -276,6 +298,11 @@ class Predictor(H3Model):
     """
     Model to store the predictor model and the prediction results.
     """
+    pk = models.CompositePrimaryKey(
+        'metric', 'h3_index',
+        verbose_name=_('Primary Key'),
+        help_text=_('The primary key of the predictor, composed by the metric and h3 index.')
+    )
     metric = models.ForeignKey(
         Metric,
         on_delete=models.CASCADE,
@@ -463,11 +490,18 @@ class Predictor(H3Model):
         verbose_name_plural = _('Predictors')
 
 
-class MetricPredictionProgress(models.Model):
+class MetricsStatistics(models.Model):
     """
-    Model to store the data prediction progress information.
+    Model to store the metric statistics  information.
     Every time the metric values are updated, a prediction will be executed.
     """
+    metric = models.ForeignKey(
+        Metric,
+        on_delete=models.CASCADE,
+        related_name='statistics',
+        verbose_name=_('Metric'),
+        help_text=_('The metric associated to the statistics.')
+    )
     time = models.DateTimeField(
         unique=True,
         null=False,
@@ -476,10 +510,9 @@ class MetricPredictionProgress(models.Model):
         help_text=_('The date and time of the execution.')
     )
     # Percentage of values successfully predicted and saved.
-    success_percentage = models.FloatField(
-        null=False,
-        blank=False,
-        default=0,
+    prediction_progress = models.FloatField(
+        null=True,
+        blank=True,
         verbose_name=_('Success percentage'),
         help_text=_('The percentage of success of the execution.'),
         validators=[MinValueValidator(0), MaxValueValidator(1)]
@@ -488,26 +521,60 @@ class MetricPredictionProgress(models.Model):
     @classmethod
     def refresh(cls, metric: Metric, time: datetime) -> None:
         with transaction.atomic():
-            metric_values_qs = MetricValue.objects.filter(metric=metric, time__date=time.date())
+            metric_values_qs = MetricValue.objects.filter(metric=metric, time=time)
             total = metric_values_qs.count()
             total_finished = metric_values_qs.filter(predicted_value__isnull=False).count()
 
-            success_percentage = 0
+            prediction_progress = 0
             if total > 0:
-                success_percentage = total_finished / total
+                prediction_progress = total_finished / total
 
             cls.objects.update_or_create(
                 time=time,
-                defaults={'success_percentage': success_percentage}
+                defaults={'prediction_progress': prediction_progress}
             )
 
     def __str__(self):
-        return f"Metric Execution of the day {self.time} with result: {self.success_percentage}"
+        return f"Metric Statistics for the metric {self.metric.name} at {self.time}."
 
     class Meta:
         ordering = ['time']
         indexes = [
             models.Index(fields=['-time'])
         ]
-        verbose_name = "Metric Prediction Progress"
-        verbose_name_plural = "Metric Prediction Progressses"
+        verbose_name = "Metric Statistics"
+        verbose_name_plural = "Metrics Statistics"
+
+
+# class RegionalStatistics(models.Model):
+#     """
+#     Model to store the regional statistics for a metric.
+#     This is used to store the statistics for a specific region (H3 index).
+#     """
+#     metric = models.ForeignKey(
+#         Metric,
+#         on_delete=models.CASCADE,
+#         related_name='regional_statistics',
+#         verbose_name=_('Metric'),
+#         help_text=_('The metric associated to the regional statistics.')
+#     )
+#     h3_index = H3Field(
+#         null=False,
+#         blank=False,
+#         verbose_name=_('H3 Index'),
+#         help_text=_('The H3 index of the region.'),
+#     )
+#     last_3d_trend = RealField(
+#         null=True,
+#         blank=True,
+#         verbose_name=_('Last 3D Trend'),
+#         help_text=_('The last 3D trend value for the region.'),
+#     )
+
+#     class Meta:
+#         unique_together = ('metric', 'h3_index')
+#         verbose_name = _('Regional Statistic')
+#         verbose_name_plural = _('Regional Statistics')
+
+#     def __str__(self):
+#         return f"Regional Statistic for {self.metric.name} at {self.h3_index}"

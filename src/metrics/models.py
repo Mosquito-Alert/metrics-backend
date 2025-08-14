@@ -10,6 +10,7 @@ from prophet import Prophet
 from prophet.plot import seasonality_plot_df
 from prophet.serialize import model_to_json as prophet_model_to_json
 from rest_framework.fields import MaxValueValidator, MinValueValidator
+from django.core.exceptions import ValidationError
 
 from src.metrics.managers import PredictorManager
 from src.metrics.tasks import refresh_prediction_task
@@ -58,8 +59,7 @@ class Metric(models.Model):
                             null=False,
                             verbose_name=_('Name'),
                             help_text=_('The name of the metric.'))
-    # TODO: SLUG field
-    code = models.CharField(
+    code = models.SlugField(
         max_length=32,
         unique=True,
         blank=False,
@@ -132,8 +132,8 @@ class MetricValue(H3Model):
         help_text=_('The time in which the raw value was recorded.'),
     )
     value = RealField(
-        null=False,
-        blank=False,
+        null=True,
+        blank=True,
         verbose_name=_('Value'),
         help_text=_('The actual value of the raw data.'),
     )
@@ -233,6 +233,13 @@ class MetricValue(H3Model):
             # If the Metric is being created, we need to assign a predictor and refresh the prediction
             self.refresh_prediction()
 
+    def clean(self):
+        super().clean()
+        if self.value is None and self.predicted_value is None:
+            raise ValidationError(
+                "Either 'value' or 'predicted_value' must be provided."
+            )
+
     class Meta:
         constraints = [
             models.UniqueConstraint(
@@ -241,6 +248,10 @@ class MetricValue(H3Model):
             models.CheckConstraint(
                 check=H3IsValidCell(models.F('h3_index')),
                 name='h3_index_must_be_valid',
+            ),
+            models.CheckConstraint(
+                check=models.Q(value__isnull=False) | models.Q(predicted_value__isnull=False),
+                name='value_or_predicted_value_must_be_present',
             )
         ]
         ordering = ['metric', 'h3_index', '-time']

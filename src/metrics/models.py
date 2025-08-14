@@ -58,6 +58,7 @@ class Metric(models.Model):
                             null=False,
                             verbose_name=_('Name'),
                             help_text=_('The name of the metric.'))
+    # TODO: SLUG field
     code = models.CharField(
         max_length=32,
         unique=True,
@@ -80,6 +81,14 @@ class Metric(models.Model):
         verbose_name=_('Is Predictable'),
         help_text=_('Whether the metric is predictable or not. If true, the metric will have a predictor '
                     'associated to it, and the values will be predicted.'),
+    )
+    h3_resolution = models.PositiveSmallIntegerField(
+        default=6,
+        blank=False,
+        null=False,
+        verbose_name=_('H3 Resolution'),
+        help_text=_('The H3 resolution of the metric. This is used to determine the H3 index of the metric.'),
+        validators=[MinValueValidator(0), MaxValueValidator(15)]
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -490,7 +499,7 @@ class Predictor(H3Model):
         verbose_name_plural = _('Predictors')
 
 
-class MetricsStatistics(models.Model):
+class MetricStatistics(models.Model):
     """
     Model to store the metric statistics  information.
     Every time the metric values are updated, a prediction will be executed.

@@ -12,13 +12,23 @@ from rest_framework.exceptions import ValidationError
 from . import models
 
 
-class MetricSerializer(ModelSerializer):
+class MetricListSerializer(ModelSerializer):
     """
-    Serializer for the Metrics.
+    Serializer for listing the Metrics.
     """
     class Meta:
         model = models.Metric
-        fields = ['id', 'name']
+        fields = ['id', 'name', 'code']
+        read_only_fields = ['created_at', 'updated_at']
+
+
+class MetricSerializer(ModelSerializer):
+    """
+    Serializer for Metric.
+    """
+    class Meta:
+        model = models.Metric
+        fields = ['id', 'name', 'code', 'time_dimension_step', 'is_predictable']
         read_only_fields = ['created_at', 'updated_at']
 
 
@@ -40,7 +50,6 @@ class MetricValueSerializer(ModelSerializer):
                 'lower_confidence_band': {'required': True, 'allow_null': False},
                 'upper_confidence_band': {'required': True, 'allow_null': False},
                 'anomaly_degree': {'required': True, 'allow_null': False}
-
             }
 
     prediction = MetricValuePredictorSerializer(source='*', read_only=True, allow_null=True)
@@ -69,36 +78,36 @@ class MetricValueSerializer(ModelSerializer):
         fields = ['h3_index', 'time', 'type', 'value',  'prediction']
 
 
-class SeasonalitySerializer(ModelSerializer):
+class PredictorSerializer(ModelSerializer):
     """
-    Serializer for the Metric Seasonality associated to the Predictor model.
+    Serializer for the Predictor model.
     """
-    yearly = serializers.ListField(source='yearly_seasonality')
-    weekly = serializers.ListField(source='weekly_seasonality')
-    daily = serializers.ListField(source='daily_seasonality')
+    seasonalities = serializers.SerializerMethodField()
+
+    def get_seasonalities(self, obj):
+        """
+        Returns the seasonality data for the predictor.
+        """
+        return {
+            'yearly': obj.yearly_seasonality,
+            'weekly': obj.weekly_seasonality,
+            'daily': obj.daily_seasonality
+        }
 
     class Meta:
         model = models.Predictor
-        fields = ['yearly', 'weekly', 'daily']
+        fields = ['h3_index', 'seasonalities', 'trend', 'last_training_date']
+        read_only_fields = ['weights']
 
 
-class MetricTrendSerializer(ModelSerializer):
+class MetricStatisticsSerializer(ModelSerializer):
     """
-    Serializer for the Metric Trend associated to the Predictor model.
+    Serializer for the MetricStatistics model.
     """
-    date = serializers.DateTimeField(source='last_training_date', format='%Y-%m-%d')
-    trend = serializers.ListField()
-
     class Meta:
-        model = models.Predictor
-        fields = ['date', 'trend']
-
-
-class LastMetricDateSerializer(Serializer):
-    """
-    Serializer for the Metric Executions.
-    """
-    time = serializers.DateTimeField()
+        model = models.MetricStatistics
+        fields = ['time', 'prediction_progress']
+        read_only_fields = ['prediction_progress']
 
 
 class MetricFileSerializer(Serializer):

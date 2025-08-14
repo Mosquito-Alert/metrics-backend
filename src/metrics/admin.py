@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
-from src.metrics.models import Metric, MetricPredictionProgress, Predictor
+# from src.metrics.models import Metric, MetricPredictionProgress, Predictor
 
 
 # @admin.register(Metric)

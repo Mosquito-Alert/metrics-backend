@@ -26,6 +26,17 @@ class MetricSerializer(ModelSerializer):
     """
     Serializer for Metric.
     """
+    time_dimension_step = serializers.ChoiceField(choices=[
+        x.lower() for x in models.Metric.TimeDimensionStepType.names])
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret['time_dimension_step'] = [
+            x.name.lower()
+            for x in models.Metric.TimeDimensionStepType if x.value == instance.type
+        ][0]
+        return ret
+
     class Meta:
         model = models.Metric
         fields = ['id', 'name', 'code', 'time_dimension_step', 'is_predictable']
@@ -47,9 +58,9 @@ class MetricValueSerializer(ModelSerializer):
             fields = ['value', 'lower_confidence_band', 'upper_confidence_band', 'anomaly_degree']
             extra_kwargs = {
                 'value': {'source': 'predicted_value', 'required': True, 'allow_null': False},
-                'lower_confidence_band': {'required': True, 'allow_null': False},
-                'upper_confidence_band': {'required': True, 'allow_null': False},
-                'anomaly_degree': {'required': True, 'allow_null': False}
+                'lower_confidence_band': {'required': True, 'allow_null': True},
+                'upper_confidence_band': {'required': True, 'allow_null': True},
+                'anomaly_degree': {'required': True, 'allow_null': True}
             }
 
     prediction = MetricValuePredictorSerializer(source='*', read_only=True, allow_null=True)
@@ -82,22 +93,25 @@ class PredictorSerializer(ModelSerializer):
     """
     Serializer for the Predictor model.
     """
-    seasonalities = serializers.SerializerMethodField()
-
-    def get_seasonalities(self, obj):
-        """
-        Returns the seasonality data for the predictor.
-        """
-        return {
-            'yearly': obj.yearly_seasonality,
-            'weekly': obj.weekly_seasonality,
-            'daily': obj.daily_seasonality
-        }
+    class PredictorSeasonalitiesSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = models.Predictor
+            fields = ['yearly_seasonality', 'weekly_seasonality', 'daily_seasonality']
+            extra_kwargs = {
+                'yearly_seasonality': {'required': True, 'allow_null': True},
+                'weekly_seasonality': {'required': True, 'allow_null': True},
+                'daily_seasonality': {'required': True, 'allow_null': True}
+            }
+    seasonalities = PredictorSeasonalitiesSerializer()
 
     class Meta:
         model = models.Predictor
-        fields = ['h3_index', 'seasonalities', 'trend', 'last_training_date']
+        fields = ['seasonalities', 'trend', 'last_training_date']
         read_only_fields = ['weights']
+        extra_kwargs = {
+            'trend': {'required': True, 'allow_null': True},
+            'last_training_date': {'required': True, 'allow_null': True}
+        }
 
 
 class MetricStatisticsSerializer(ModelSerializer):

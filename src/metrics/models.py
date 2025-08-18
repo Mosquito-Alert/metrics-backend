@@ -73,7 +73,7 @@ class Metric(models.Model):
         blank=True,
         default=TimeDimensionStepType.DAILY,
         verbose_name=_('Time Dimension Step'),
-        help_text=_('The time dimension step for the metric.')
+        help_text=_('The time dimension step for the metric. Minutes are the smallest unit.')
     )
     is_predictable = models.BooleanField(
         blank=False,
@@ -129,7 +129,7 @@ class MetricValue(H3Model):
         null=False,
         blank=False,
         verbose_name=_('Time'),
-        help_text=_('The time in which the raw value was recorded.'),
+        help_text=_('The time in which the raw value was recorded. Maximum precision is one minute.'),
     )
     value = RealField(
         null=True,
@@ -226,6 +226,14 @@ class MetricValue(H3Model):
 
         if self.value is not None and math.isnan(self.value):
             self.value = None
+
+        # Round time to minute precision
+        self.time = self.time.replace(second=0, microsecond=0)
+        # Round time to Metric.time_dimension_step precision
+        if self.metric.time_dimension_step == Metric.TimeDimensionStepType.HOURLY:
+            self.time = self.time.replace(minute=0)
+        elif self.metric.time_dimension_step == Metric.TimeDimensionStepType.DAILY:
+            self.time = self.time.replace(hour=0, minute=0)
 
         # Save the initial Metric with the prediction values and the predictor to None.
         super().save(*args, **kwargs)

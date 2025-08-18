@@ -12,7 +12,7 @@ from prophet.serialize import model_to_json as prophet_model_to_json
 from rest_framework.fields import MaxValueValidator, MinValueValidator
 from django.core.exceptions import ValidationError
 
-from src.metrics.managers import PredictorManager
+from src.metrics.managers import MetricValueManager, PredictorManager
 from src.metrics.tasks import refresh_prediction_task
 from src.utils.database_features import H3Field, H3IsValidCell, RealField
 
@@ -187,6 +187,8 @@ class MetricValue(H3Model):
                     'there is no anomaly. This value will be estimated at creation.')
     )
 
+    objects = MetricValueManager()
+
     def refresh_prediction(self, refresh_progress: bool = True) -> None:
         """
         (Async) Invokes the predictor and assign the Prediction fields.
@@ -229,9 +231,14 @@ class MetricValue(H3Model):
         super().save(*args, **kwargs)
 
         # Assign a predictor to the Metric and set the prediction values.
-        if is_adding and self.metric.is_predictable:
-            # If the Metric is being created, we need to assign a predictor and refresh the prediction
-            self.refresh_prediction()
+        if is_adding:
+            MetricStatistics.objects.get_or_create(
+                time=self.time,
+                metric=self.metric,
+            )
+            if self.metric.is_predictable:
+                # If the Metric is being created, we need to assign a predictor and refresh the prediction
+                self.refresh_prediction()
 
     def clean(self):
         super().clean()

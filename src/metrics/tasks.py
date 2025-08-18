@@ -21,6 +21,7 @@ def refresh_prediction_task(metric_id, h3_index, time, refresh_progress=True):
     except MetricValue.DoesNotExist:
         return
 
+    # TODO: Review if this is still needed
     aware_datetime = timezone.make_aware(
         datetime.combine(metric_value.time, datetime.min.time())
     )

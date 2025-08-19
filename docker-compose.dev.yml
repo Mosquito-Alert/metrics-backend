@@ -5,32 +5,32 @@ services:
       dockerfile: Dockerfile.timescale
       args:
         - DEV=true
-    image: mosquito-alert/anomaly-detection-local-db
-    container_name: anomaly-detection-local-db
+    image: mosquito-alert/metrics-db
+    container_name: metrics-db
     hostname: db
     ports:
       - "5432:5432"
     volumes:
-      - anomaly-detection-local-db_data:/var/lib/postgresql/data
-      - anomaly-detection-local-db_data_backups:/backups
+      - metrics-db_data:/var/lib/postgresql/data
+      - metrics-db_data_backups:/backups
     env_file:
       - ./.envs/.local/.postgres.env
     # command: "-c log_statement=all"
 
   redis:
     image: redis:7.0.15
-    container_name: anomaly-detection-local-redis
+    container_name: metrics-redis
     hostname: redis
     ports:
       - "6379:6379"
     volumes:
-      - anomaly-detection-local-redis_data:/data
+      - metrics-redis_data:/data
     env_file:
       - ./.envs/.local/.django.env
 
   broker:
     image: rabbitmq:4.1.0-management
-    container_name: anomaly-detection-local-broker
+    container_name: metrics-broker
     hostname: broker
     configs:
       - source: plugins
@@ -46,8 +46,8 @@ services:
       context: .
       args:
         - DEV=true
-    image: mosquito-alert/anomaly-detection-local-api
-    container_name: anomaly-detection-local-api
+    image: mosquito-alert/metrics-api
+    container_name: metrics-api
     hostname: api
     ports:
       - "8000:8000"
@@ -69,14 +69,14 @@ services:
 
   worker:
     <<: *api
-    container_name: anomaly-detection-local-worker
+    container_name: metrics-worker
     hostname: worker
     ports: []
     command: /scripts/start_worker
 
   worker_flower:
     <<: *api
-    container_name: anomaly-detection-local-flower
+    container_name: metrics-flower
     hostname: flower
     ports:
       - "5556:5555"
@@ -84,16 +84,16 @@ services:
 
   geoserver:
     image: docker.osgeo.org/geoserver:2.28.x
-    container_name: anomaly-detection-local-geoserver
+    container_name: metrics-geoserver
     hostname: geoserver
     ports:
       - "8080:8080"
 
 
 volumes:
-  anomaly-detection-local-db_data:
-  anomaly-detection-local-db_data_backups:
-  anomaly-detection-local-redis_data:
+  metrics-db_data:
+  metrics-db_data_backups:
+  metrics-redis_data:
 
 configs:
   plugins:

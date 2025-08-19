@@ -19,10 +19,14 @@ class PredictorManager(Manager):
         ).latest('trained_at')
 
 
+# TODO: Create queryset method to  filter MetricValue that has value == None
+
 class MetricValueManager(Manager):
     """
     Custom manager for the MetricValue model.
     """
+
+    #  TODO: def get_queryset ...
 
     def bulk_create(self, objs, **kwargs):
         """
@@ -40,6 +44,7 @@ class MetricValueManager(Manager):
         with transaction.atomic():
             result = super().bulk_create(objs, **kwargs)
 
+            # TODO: Itertools.groupby to group by time and create MetricStatistics for each group
             # Ensure MetricStatistics exists for this time
             MetricStatistics.objects.get_or_create(
                 time=first_time,

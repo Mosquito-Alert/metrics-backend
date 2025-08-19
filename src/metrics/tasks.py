@@ -69,70 +69,70 @@ def refresh_prediction_task(metric_id, h3_index, time, refresh_progress=True):
         MetricPredictionProgress.refresh(metric=metric_value.metric, date=metric_value.time)
 
 
-@shared_task
-def predict_batch_task(from_date, to_date, metric_id, h3_index=None):
-    """
-    Update the predicted values in the MetricValue model, given their assigned predictor.
-    """
-    from src.metrics.models import MetricValue, Predictor
+# @shared_task
+# def predict_batch_task(from_date, to_date, metric_id, h3_index=None):
+#     """
+#     Update the predicted values in the MetricValue model, given their assigned predictor.
+#     """
+#     from src.metrics.models import MetricValue, Predictor
 
-    predictor_qs = Predictor.objects.filter(
-        models.Exists(
-            MetricValue.objects.filter(
-                predictor=models.OuterRef('pk'),
-                time__gte=from_date,
-                time__lte=to_date,
-                metric_id=metric_id
-            )
-        )
-    )
-    if h3_index:
-        predictor_qs = predictor_qs.filter(h3_index=h3_index)
+#     predictor_qs = Predictor.objects.filter(
+#         models.Exists(
+#             MetricValue.objects.filter(
+#                 predictor=models.OuterRef('pk'),
+#                 time__gte=from_date,
+#                 time__lte=to_date,
+#                 metric_id=metric_id
+#             )
+#         )
+#     )
+#     if h3_index:
+#         predictor_qs = predictor_qs.filter(h3_index=h3_index)
 
-    for predictor in predictor_qs.iterator(chunk_size=2000):
-        batch_update_metrics_for_predictor_task.delay(
-            predictor_id=predictor.id,
-            from_date=from_date,
-            to_date=to_date
-        )
+#     for predictor in predictor_qs.iterator(chunk_size=2000):
+#         batch_update_metrics_for_predictor_task.delay(
+#             predictor_id=predictor.id,
+#             from_date=from_date,
+#             to_date=to_date
+#         )
 
 
-@shared_task
-def batch_update_metrics_for_predictor_task(predictor_id, from_date, to_date):
-    """
-    Update the predicted values in the MetricValue model for a specific predictor
-    """
-    from src.metrics.models import MetricValue, Predictor, MetricPredictionProgress
+# @shared_task
+# def batch_update_metrics_for_predictor_task(predictor_id, from_date, to_date):
+#     """
+#     Update the predicted values in the MetricValue model for a specific predictor
+#     """
+#     from src.metrics.models import MetricValue, Predictor, MetricPredictionProgress
 
-    try:
-        predictor = Predictor.objects.get(id=predictor_id)
-    except Predictor.DoesNotExist:
-        return
+#     try:
+#         predictor = Predictor.objects.get(id=predictor_id)
+#     except Predictor.DoesNotExist:
+#         return
 
-    results = predictor.predict(dates=list(generate_date_range(from_date, to_date)))
-    if not results:
-        return
+#     results = predictor.predict(dates=list(generate_date_range(from_date, to_date)))
+#     if not results:
+#         return
 
-    date_to_pk = {
-        value.time: value
-        for value in predictor.values.filter(time__gte=from_date, time__lte=to_date).iterator(chunk_size=1000)
-    }
+#     date_to_pk = {
+#         value.time: value
+#         for value in predictor.values.filter(time__gte=from_date, time__lte=to_date).iterator(chunk_size=1000)
+#     }
 
-    metric_value_to_update = []
-    for result in results:
-        if metric_value := date_to_pk.get(result['datetime'], None):
-            metric_value.predicted_value = result['yhat']
-            metric_value.upper_confidence_band = result['yhat_upper']
-            metric_value.lower_confidence_band = result['yhat_lower']
-            metric_value_to_update.append(metric_value)
+#     metric_value_to_update = []
+#     for result in results:
+#         if metric_value := date_to_pk.get(result['datetime'], None):
+#             metric_value.predicted_value = result['yhat']
+#             metric_value.upper_confidence_band = result['yhat_upper']
+#             metric_value.lower_confidence_band = result['yhat_lower']
+#             metric_value_to_update.append(metric_value)
 
-    if metric_value_to_update:
-        MetricValue.objects.bulk_update(
-            metric_value_to_update,
-            batch_size=2000,
-            fields=['predicted_value', 'upper_confidence_band', 'lower_confidence_band']
-        )
+#     if metric_value_to_update:
+#         MetricValue.objects.bulk_update(
+#             metric_value_to_update,
+#             batch_size=2000,
+#             fields=['predicted_value', 'upper_confidence_band', 'lower_confidence_band']
+#         )
 
-        # Refresh the prediction progress for every date in the range
-        for date in generate_date_range(from_date, to_date):
-            MetricPredictionProgress.refresh(time=date)
+#         # Refresh the prediction progress for every date in the range
+#         for date in generate_date_range(from_date, to_date):
+#             MetricPredictionProgress.refresh(time=date)

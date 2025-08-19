@@ -2,7 +2,7 @@
 import django_filters as filters
 from django import forms
 from src.metrics import models
-from utils.database_features import H3Field
+from src.utils.database_features import H3Field
 import h3
 
 

@@ -89,29 +89,29 @@ class MetricValueSerializer(ModelSerializer):
         fields = ['h3_index', 'time', 'type', 'value',  'prediction']
 
 
-class PredictorSerializer(ModelSerializer):
-    """
-    Serializer for the Predictor model.
-    """
-    class PredictorSeasonalitiesSerializer(serializers.ModelSerializer):
-        class Meta:
-            model = models.Predictor
-            fields = ['yearly_seasonality', 'weekly_seasonality', 'daily_seasonality']
-            extra_kwargs = {
-                'yearly_seasonality': {'required': True, 'allow_null': True},
-                'weekly_seasonality': {'required': True, 'allow_null': True},
-                'daily_seasonality': {'required': True, 'allow_null': True}
-            }
-    seasonalities = PredictorSeasonalitiesSerializer()
+# class PredictorSerializer(ModelSerializer):
+#     """
+#     Serializer for the Predictor model.
+#     """
+#     class PredictorSeasonalitiesSerializer(serializers.ModelSerializer):
+#         class Meta:
+#             model = models.Predictor
+#             fields = ['yearly_seasonality', 'weekly_seasonality', 'daily_seasonality']
+#             extra_kwargs = {
+#                 'yearly_seasonality': {'required': True, 'allow_null': True},
+#                 'weekly_seasonality': {'required': True, 'allow_null': True},
+#                 'daily_seasonality': {'required': True, 'allow_null': True}
+#             }
+#     seasonalities = PredictorSeasonalitiesSerializer()
 
-    class Meta:
-        model = models.Predictor
-        fields = ['seasonalities', 'trend', 'last_training_date']
-        read_only_fields = ['weights']
-        extra_kwargs = {
-            'trend': {'required': True, 'allow_null': True},
-            'last_training_date': {'required': True, 'allow_null': True}
-        }
+#     class Meta:
+#         model = models.Predictor
+#         fields = ['seasonalities', 'trend', 'last_training_date']
+#         read_only_fields = ['weights']
+#         extra_kwargs = {
+#             'trend': {'required': True, 'allow_null': True},
+#             'last_training_date': {'required': True, 'allow_null': True}
+#         }
 
 
 class MetricStatisticsSerializer(ModelSerializer):

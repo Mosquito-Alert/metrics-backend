@@ -1,19 +1,15 @@
 import math
 from datetime import datetime
-from typing import List, Optional, TypedDict
+from typing import Optional, TypedDict
 
-import pandas as pd
 from django.contrib.postgres.fields import ArrayField
 from django.db import models, transaction
 from django.utils.translation import gettext_lazy as _
-from prophet import Prophet
-from prophet.plot import seasonality_plot_df
-from prophet.serialize import model_to_json as prophet_model_to_json
 from rest_framework.fields import MaxValueValidator, MinValueValidator
 from django.core.exceptions import ValidationError
 
-from src.metrics.managers import MetricValueManager, PredictorManager
-from src.metrics.tasks import refresh_prediction_task
+from src.metrics.managers import MetricValueManager
+# from src.metrics.tasks import refresh_prediction_task
 from src.utils.database_features import H3Field, H3IsValidCell, RealField
 
 
@@ -149,17 +145,6 @@ class MetricValue(H3Model):
     # primary key to work properly, and having a separate model would need three additional fields
     # (metric_id, h3_index, time) to be able to link that model with the MetricValue model.
     # It is preferible then to have these fields nullable (null takes only 1 bit per nullable field).
-    predictor = models.ForeignObject(
-        'Predictor',
-        from_fields=['metric', 'h3_index'],
-        to_fields=['metric', 'h3_index'],
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name='values',
-        verbose_name=_('Predictor'),
-        help_text=_('The predictor associated to the predicted value.')
-    )
     predicted_value = RealField(
         null=True,
         blank=True,
@@ -193,7 +178,8 @@ class MetricValue(H3Model):
         """
         (Async) Invokes the predictor and assign the Prediction fields.
         """
-        refresh_prediction_task.delay(self.metric.id, self.h3_index, self.time, refresh_progress=refresh_progress)
+        # refresh_prediction_task(self.metric.id, self.h3_index, self.time, refresh_progress=refresh_progress)
+        # refresh_prediction_task.delay(self.metric.id, self.h3_index, self.time, refresh_progress=refresh_progress)
 
     def calculate_anomaly_degree(self) -> Optional[float]:
         """
@@ -223,7 +209,8 @@ class MetricValue(H3Model):
 
     def save(self, *args, **kwargs):
         is_adding = self._state.adding  # A new object is being created
-
+        # TODO: From kwargs get the update_fields and depending if the "value" or "time" is in there,
+        # execute the following code or not.
         if self.value is not None and math.isnan(self.value):
             self.value = None
 
@@ -320,6 +307,24 @@ class PredictorConfig(models.Model):
         verbose_name=_('Growth'),
         help_text=_('The growth model to use for the predictor.'),
     )
+    # TODO: Not days, but depending on the time_dimension_step
+    expiry_days = models.PositiveIntegerField(
+        default=30,
+        blank=False,
+        null=False,
+        verbose_name=_('Expiry Days'),
+        help_text=_('The number of days the predictor is valid for.')
+    )
+    # TODO: Maybe delete this columns and get the value from the smaller seasonality active.length * 2
+    # Si el count es menor de  30 puntos, esperar a tener más datos
+    # Antes de tener datos entrenados, banda con los valores max y min del histórico no entrenado.
+    min_days_for_training = models.PositiveIntegerField(
+        default=30,
+        blank=False,
+        null=False,
+        verbose_name=_('Minimum Days for Training'),
+        help_text=_('The minimum number of days of historical data required for training the predictor.')
+    )
 
     def __str__(self):
         return f"Predictor Config for {self.metric.name}"
@@ -327,202 +332,6 @@ class PredictorConfig(models.Model):
     class Meta:
         verbose_name = _('Predictor Config')
         verbose_name_plural = _('Predictor Configs')
-
-
-class Predictor(H3Model):
-    """
-    Model to store the predictor model and the prediction results.
-    """
-    pk = models.CompositePrimaryKey(
-        'metric', 'h3_index',
-        verbose_name=_('Primary Key'),
-        help_text=_('The primary key of the predictor, composed by the metric and h3 index.')
-    )
-    metric = models.ForeignKey(
-        Metric,
-        on_delete=models.CASCADE,
-        related_name='predictors',
-        verbose_name=_('Metric'),
-        help_text=_('The metric associated to the predictor.')
-    )
-    last_training_date = models.DateTimeField(
-        null=False,
-        blank=False,
-        verbose_name=_('Last Training Date'),
-        help_text=_('The last value date used to train the model.')
-    )
-    weights = models.JSONField(
-        null=True,
-        blank=True,
-        verbose_name=_('Weights'),
-        help_text=_('The predictor model itself, serialized as JSON.')
-    )
-    yearly_seasonality = ArrayField(  # ! CAREFUL: The type ArrayField only works in PostgreSQL
-        base_field=RealField(),  # ! CAREFUL: The type RealField only works in PostgreSQL
-        size=365,
-        null=True,
-        blank=True,
-        verbose_name=_('Yearly Seasonality'),
-        help_text=_('The predicted yearly seasonality for the metric.')
-    )
-    weekly_seasonality = ArrayField(
-        base_field=RealField(),
-        size=7,
-        null=True,
-        blank=True,
-        verbose_name=_('Weekly Seasonality'),
-        help_text=_('The predicted weekly seasonality for the metric.')
-    )
-    daily_seasonality = ArrayField(
-        base_field=RealField(),
-        size=24,
-        null=True,
-        blank=True,
-        verbose_name=_('Daily Seasonality'),
-        help_text=_('The predicted daily seasonality for the metric.')
-    )
-    trend = ArrayField(
-        base_field=RealField(),
-        null=True,
-        blank=True,
-        verbose_name=_('Trend'),
-        help_text=_('The predicted trend for the metric.')
-    )
-
-    objects = PredictorManager()
-
-    @property
-    def is_trained(self) -> bool:
-        """
-        Whether the predictor is trained or not.
-        """
-        return self.weights is not None
-
-    @staticmethod
-    def _predict(prophet, df) -> pd.DataFrame:
-        df_new = df.copy()
-        df_new['cap'] = 1
-        df_new['floor'] = 0
-
-        return prophet.predict(df_new)
-
-    def predict(self, dates: List[datetime]) -> Optional[List[PredictionResult]]:
-        """
-        Predicts the values for the specified data.
-        """
-        from prophet.serialize import model_from_json
-        if not self.is_trained:
-            self.train()
-        if not self.is_trained:
-            # This second comprobation is needed for the first iterations (first 30 days)
-            return
-
-        prophet = model_from_json(self.weights)
-
-        # If dates is not an array, convert to arary.
-        if not isinstance(dates, list):
-            dates = [dates, ]
-
-        df = pd.DataFrame(dates, columns=['ds',])
-        forecast: PredictionResult = [
-            PredictionResult(**res)
-            for res in self._predict(prophet=prophet, df=df)[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].rename(
-                columns={'ds': 'datetime'}).to_dict(orient='records')
-        ]
-        return forecast
-
-    def train(self, force: bool = False) -> None:
-        """
-        Trains the predictor model with past data.
-        """
-        # We need to set the logger to avoid the warning of the prophet library.
-        import logging
-        logger = logging.getLogger('cmdstanpy')
-        logger.addHandler(logging.NullHandler())
-        logger.propagate = False
-        logger.setLevel(logging.CRITICAL)
-
-        import warnings
-        warnings.filterwarnings("ignore", category=pd.errors.SettingWithCopyWarning)
-
-        if self.is_trained and not force:
-            return
-
-        # NOTE: Do not delete the order by date, as it is needed for the Prophet model.
-        metric_value_qs = self.metric.values.filter(
-            time__lt=self.last_training_date, h3_index=self.h3_index).order_by('time')
-
-        df = pd.DataFrame.from_records(
-            ({'ds': obj.date, 'y': obj.value} for obj in metric_value_qs.iterator())  # Generator
-        )
-        # TODO: Apply Savitzky-Golay filter with safeguards. Maybe, create a new field in Metric (smoothed_value)
-
-        if df.empty or df['y'].isna().all() or df['y'].eq(0).all():
-            return
-
-        first_non_zero = df[df["y"] != 0].iloc[0]
-        # See: https://facebook.github.io/prophet/docs/outliers.html
-        df.loc[df['ds'] < first_non_zero['ds'], "y"] = None
-
-        if df["y"].count() < self.MIN_DAYS_FOR_TRAINING:
-            # If there are not enough quality data to train the model, do not train it.
-            return
-
-        model = Prophet(
-            growth=self.metric.predictor_config.growth,
-            yearly_seasonality=self.metric.predictor_config.yearly_seasonality,
-            weekly_seasonality=self.metric.predictor_config.weekly_seasonality,
-            daily_seasonality=self.metric.predictor_config.daily_seasonality,
-        )
-        # Logistic growth and boundaries between 0 and 1 are specifict to the bite risk model, which value is a
-        # probability. If ever needs to use other kind of metric set the boundaries on the MetricType model.
-        df.loc[:, 'cap'] = 1
-        df.loc[:, 'floor'] = 0
-        model.fit(df)
-
-        # Trend
-        future = model.make_future_dataframe(periods=0)
-        future['cap'] = 1  # Ensure the future data has the cap
-        future['floor'] = 0  # Ensure the future data has the floor
-        forecast = model.predict(future)
-
-        # Seasonality
-        if self.metric.predictor_config.yearly_seasonality:
-            # Generate the seasonality plot dataframe for yearly seasonality
-            df_y = seasonality_plot_df(m=model, ds=pd.date_range(start='2017-01-01', periods=365, freq='D'))
-            seas_df = model.predict_seasonal_components(df_y)
-            self.yearly_seasonality = seas_df.reset_index(inplace=False)['yearly'].to_list()
-        if self.metric.predictor_config.weekly_seasonality:
-            # Generate the seasonality plot dataframe for weekly seasonality
-            df_w = seasonality_plot_df(m=model, ds=pd.date_range(start='2017-01-01', periods=7, freq='D'))
-            seas_df = model.predict_seasonal_components(df_w)
-            self.weekly_seasonality = seas_df.reset_index(inplace=False)['weekly'].to_list()
-        if self.metric.predictor_config.daily_seasonality:
-            # Generate the seasonality plot dataframe for daily seasonality
-            df_d = seasonality_plot_df(m=model, ds=pd.date_range(start='2017-01-01', periods=24, freq='H'))
-            seas_df = model.predict_seasonal_components(df_d)
-            self.daily_seasonality = seas_df.reset_index(inplace=False)['daily'].to_list()
-
-        # Save
-        self.weights = prophet_model_to_json(model)
-        self.trend = forecast['trend'].to_list()
-        self.save()
-
-    def __str__(self):
-        return f"Predictor for {self.metric.name} on {self.h3_index} trained at {self.last_training_date}"
-
-    class Meta:
-        ordering = ['metric', 'h3_index', '-last_training_date']
-        indexes = [
-            models.Index(fields=['metric', 'h3_index', 'last_training_date']),
-        ]
-        constraints = [
-            models.UniqueConstraint(
-                fields=['metric', 'h3_index', 'last_training_date'], name='unique_predictor'
-            )
-        ]
-        verbose_name = _('Predictor')
-        verbose_name_plural = _('Predictors')
 
 
 class MetricStatistics(models.Model):
@@ -570,7 +379,7 @@ class MetricStatistics(models.Model):
             )
 
     def __str__(self):
-        return f"Metric Statistics for the metric {self.metric.name} at {self.time}."
+        return f"Statistics for the metric metric {self.metric.name} at {self.time}."
 
     class Meta:
         ordering = ['time']
@@ -581,35 +390,60 @@ class MetricStatistics(models.Model):
         verbose_name_plural = "Metrics Statistics"
 
 
-# class RegionalStatistics(models.Model):
-#     """
-#     Model to store the regional statistics for a metric.
-#     This is used to store the statistics for a specific region (H3 index).
-#     """
-#     metric = models.ForeignKey(
-#         Metric,
-#         on_delete=models.CASCADE,
-#         related_name='regional_statistics',
-#         verbose_name=_('Metric'),
-#         help_text=_('The metric associated to the regional statistics.')
-#     )
-#     h3_index = H3Field(
-#         null=False,
-#         blank=False,
-#         verbose_name=_('H3 Index'),
-#         help_text=_('The H3 index of the region.'),
-#     )
-#     last_3d_trend = RealField(
-#         null=True,
-#         blank=True,
-#         verbose_name=_('Last 3D Trend'),
-#         help_text=_('The last 3D trend value for the region.'),
-#     )
+class MetricRegionalStatistics(models.Model):
+    """
+    Model to store the regional statistics for a metric.
+    This is used to store the statistics for a specific region (H3 index).
+    """
+    metric = models.ForeignKey(
+        Metric,
+        on_delete=models.CASCADE,
+        related_name='regional_statistics',
+        verbose_name=_('Metric'),
+        help_text=_('The metric associated to the regional statistics.')
+    )
+    h3_index = H3Field(
+        null=False,
+        blank=False,
+        verbose_name=_('H3 Index'),
+        help_text=_('The H3 index of the region.'),
+    )
+    trend = ArrayField(
+        base_field=RealField(),
+        null=True,
+        blank=True,
+        verbose_name=_('Trend'),
+        help_text=_('The predicted trend for the metric.')
+    )
+    yearly_seasonality = ArrayField(  # ! CAREFUL: The type ArrayField only works in PostgreSQL
+        base_field=RealField(),  # ! CAREFUL: The type RealField only works in PostgreSQL
+        size=365,
+        null=True,
+        blank=True,
+        verbose_name=_('Yearly Seasonality'),
+        help_text=_('The predicted yearly seasonality for the metric.')
+    )
+    weekly_seasonality = ArrayField(
+        base_field=RealField(),
+        size=7,
+        null=True,
+        blank=True,
+        verbose_name=_('Weekly Seasonality'),
+        help_text=_('The predicted weekly seasonality for the metric.')
+    )
+    daily_seasonality = ArrayField(
+        base_field=RealField(),
+        size=24,
+        null=True,
+        blank=True,
+        verbose_name=_('Daily Seasonality'),
+        help_text=_('The predicted daily seasonality for the metric.')
+    )
 
-#     class Meta:
-#         unique_together = ('metric', 'h3_index')
-#         verbose_name = _('Regional Statistic')
-#         verbose_name_plural = _('Regional Statistics')
+    class Meta:
+        unique_together = ('metric', 'h3_index')
+        verbose_name = _('MetricRegional Statistic')
+        verbose_name_plural = _('Metric Regional Statistics')
 
-#     def __str__(self):
-#         return f"Regional Statistic for {self.metric.name} at {self.h3_index}"
+    def __str__(self):
+        return f"Regional Statistic for metric {self.metric.name} in H3 cell {self.h3_index}"

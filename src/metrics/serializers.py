@@ -2,12 +2,13 @@ import math
 import re
 from datetime import datetime, timezone
 from dateutil import parser
-import h3
 import pandas as pd
 
 from rest_framework import serializers
 from rest_framework.serializers import (ModelSerializer, Serializer)
 from rest_framework.exceptions import ValidationError
+
+from src.utils.datetime import clean_time_field
 
 from . import models
 
@@ -89,31 +90,6 @@ class MetricValueSerializer(ModelSerializer):
         fields = ['h3_index', 'time', 'type', 'value',  'prediction']
 
 
-# class PredictorSerializer(ModelSerializer):
-#     """
-#     Serializer for the Predictor model.
-#     """
-#     class PredictorSeasonalitiesSerializer(serializers.ModelSerializer):
-#         class Meta:
-#             model = models.Predictor
-#             fields = ['yearly_seasonality', 'weekly_seasonality', 'daily_seasonality']
-#             extra_kwargs = {
-#                 'yearly_seasonality': {'required': True, 'allow_null': True},
-#                 'weekly_seasonality': {'required': True, 'allow_null': True},
-#                 'daily_seasonality': {'required': True, 'allow_null': True}
-#             }
-#     seasonalities = PredictorSeasonalitiesSerializer()
-
-#     class Meta:
-#         model = models.Predictor
-#         fields = ['seasonalities', 'trend', 'last_training_date']
-#         read_only_fields = ['weights']
-#         extra_kwargs = {
-#             'trend': {'required': True, 'allow_null': True},
-#             'last_training_date': {'required': True, 'allow_null': True}
-#         }
-
-
 class MetricStatisticsSerializer(ModelSerializer):
     """
     Serializer for the MetricStatistics model.
@@ -146,7 +122,7 @@ class MetricFileSerializer(Serializer):
         if not match:
             raise ValidationError('Filename must match the format: {type}_YYYY-MM-DD[TXX.XX.XXXZ].csv')
 
-        # Validate that timedate part is a real valid timedate
+        # Validate that datetime part is a real valid datetime
         try:
             date_str = match.group(2)
             # Parse ISO 8601 date/time
@@ -161,9 +137,10 @@ class MetricFileSerializer(Serializer):
                 raise ValidationError('Date cannot be in the future.')
         except ValueError:
             raise ValidationError(f"Invalid date in filename: {date_str}")
-
-        # Store the extracted date in validated_data
-        self.context['filename_datetime'] = parsed_datetime
+        # Clean the time field
+        metric_id = self.context.get('metric_id')
+        metric = models.Metric.objects.get(id=metric_id)
+        self.context['filename_datetime'] = clean_time_field(parsed_datetime, metric)
 
         # Validate that the type of the metric is one of the accepted values
         try:
@@ -199,34 +176,21 @@ class MetricFileSerializer(Serializer):
         if df.empty:
             raise ValidationError("The uploaded CSV file is empty — no rows found.")
         metrics_to_create = []
-        for idx, row in df.iterrows():
-            # Validate H3 index
-            try:
-                int(row['h3_index'], 16)
-                if h3.is_valid_cell(row['h3_index']) is False:
-                    raise ValidationError(
-                        f"Invalid H3 index at row {idx + 1}: {row['h3_index']}. It is not a valid H3 Cell.")
-            except ValueError:
-                raise ValidationError(f"Invalid H3 index at row {idx + 1}: {row['h3_index']}. Needs to be hexadecimal.")
-            metrics_to_create.append(
-                models.MetricValue(
-                    metric_id=metric_id,
-                    h3_index=row['h3_index'],
-                    time=time,
-                    value=row['value'] if not math.isnan(row['value']) else None,
-                    type=type
-                )
+
+        for _, row in df.iterrows():
+            obj = models.MetricValue(
+                metric_id=metric_id,
+                h3_index=row['h3_index'],
+                time=time,
+                value=row['value'] if not math.isnan(row['value']) else None,
+                type=type
             )
+            obj.clean()
+            metrics_to_create.append(obj)
 
         # Create the metrics without the prediction values
         objs = models.MetricValue.objects.bulk_create(metrics_to_create, batch_size=2000)
 
         # Perform prediction for each metric
-        for i, metric in enumerate(objs):
-            # An update per metric won't represent a significant delta in progress,
-            # so it will be updated each 10th metric prediction for performance reasons
-            if i % 10 == 0 or i == len(objs) - 1:
-                metric.refresh_prediction(refresh_progress=True)
-            else:
-                metric.refresh_prediction(refresh_progress=False)
+        [metric.refresh_prediction() for metric in objs]
         return objs

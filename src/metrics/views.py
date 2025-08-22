@@ -40,7 +40,6 @@ class MetricValueViewSet(GenericViewSet, ListModelMixin):
     serializer_class = serializers.MetricValueSerializer
     permission_classes = [AllowAny]
     filterset_class = filters.MetricValueFilter
-    lookup_url_kwarg = "id"
 
     def get_queryset(self):
         """

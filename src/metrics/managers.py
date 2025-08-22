@@ -1,6 +1,5 @@
-from datetime import timedelta
 from django.db import transaction
-from django.db.models import F,  ExpressionWrapper, Manager, DateTimeField
+from django.db.models import Manager
 
 
 # TODO: Create queryset method to  filter MetricValue that has value == None

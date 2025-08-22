@@ -10,6 +10,7 @@ metric_values_router = routers.NestedSimpleRouter(router, r'metrics', lookup='me
 metric_values_router.register('values', views.MetricValueViewSet, basename='metric-values')
 
 # metric_predictors_router = routers.NestedSimpleRouter(router, r'metrics', lookup='metric')
+# metric_predictors_router.register('predictors', views.MetricPredictorViewSet, basename='metric-predictors')
 
 metrics_statistics_router = routers.NestedSimpleRouter(router, r'metrics', lookup='metric')
 metrics_statistics_router.register('statistics', views.MetricStatisticsViewSet, basename='metric-statistics')

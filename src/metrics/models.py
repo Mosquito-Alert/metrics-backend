@@ -2,15 +2,17 @@ import math
 from datetime import datetime
 from typing import Optional, TypedDict
 
+from django_lifecycle import LifecycleModelMixin
+import h3
 from django.contrib.postgres.fields import ArrayField
-from django.db import models, transaction
+from django.core.exceptions import ValidationError
+from django.db import models
 from django.utils.translation import gettext_lazy as _
 from rest_framework.fields import MaxValueValidator, MinValueValidator
-from django.core.exceptions import ValidationError
 
 from src.metrics.managers import MetricValueManager
-# from src.metrics.tasks import refresh_prediction_task
 from src.utils.database_features import H3Field, H3IsValidCell, RealField
+from src.utils.datetime import clean_time_field
 
 
 class PredictionResult(TypedDict):
@@ -51,37 +53,34 @@ class Metric(models.Model):
         DAILY = 1, _('Daily')
         HOURLY = 2, _('Hourly')
 
-    name = models.CharField(max_length=255, unique=True, blank=False,
-                            null=False,
-                            verbose_name=_('Name'),
-                            help_text=_('The name of the metric.'))
+    name = models.CharField(
+        max_length=255,
+        unique=True, null=False, blank=False,
+        verbose_name=_('Name'),
+        help_text=_('The name of the metric.')
+    )
     code = models.SlugField(
         max_length=32,
-        unique=True,
-        blank=False,
-        null=False,
+        unique=True, null=False, blank=False,
         verbose_name=_('Code'),
         help_text=_('The code of the metric, used for identification purposes. Example: bites.'),
     )
     time_dimension_step = models.PositiveSmallIntegerField(
         choices=TimeDimensionStepType.choices,
-        null=False,
-        blank=True,
+        null=False, blank=True,
         default=TimeDimensionStepType.DAILY,
         verbose_name=_('Time Dimension Step'),
         help_text=_('The time dimension step for the metric. Minutes are the smallest unit.')
     )
     is_predictable = models.BooleanField(
-        blank=False,
-        null=False,
+        null=False, blank=False,
         verbose_name=_('Is Predictable'),
         help_text=_('Whether the metric is predictable or not. If true, the metric will have a predictor '
                     'associated to it, and the values will be predicted.'),
     )
     h3_resolution = models.PositiveSmallIntegerField(
         default=6,
-        blank=False,
-        null=False,
+        null=False, blank=False,
         verbose_name=_('H3 Resolution'),
         help_text=_('The H3 resolution of the metric. This is used to determine the H3 index of the metric.'),
         validators=[MinValueValidator(0), MaxValueValidator(15)]
@@ -98,7 +97,52 @@ class Metric(models.Model):
         return self.name
 
 
-class MetricValue(H3Model):
+class PredictorConfig(models.Model):
+    """
+    Model to store the configuration of the predictor.
+    """
+    metric = models.OneToOneField(
+        Metric,
+        on_delete=models.CASCADE,
+        related_name='predictor_config',
+        verbose_name=_('Metric'),
+        help_text=_('The metric associated to the predictor configuration.')
+    )
+    yearly_seasonality = models.BooleanField(
+        null=False, blank=False,
+        default=True,
+        verbose_name=_('Yearly Seasonality'),
+        help_text=_('Whether the predictor should consider yearly seasonality.')
+    )
+    weekly_seasonality = models.BooleanField(
+        null=False, blank=False,
+        default=False,
+        verbose_name=_('Weekly Seasonality'),
+        help_text=_('Whether the predictor should consider weekly seasonality.')
+    )
+    daily_seasonality = models.BooleanField(
+        null=False, blank=False,
+        default=False,
+        verbose_name=_('Daily Seasonality'),
+        help_text=_('Whether the predictor should consider daily seasonality.')
+    )
+    growth = models.CharField(
+        max_length=32,
+        null=False, blank=False,
+        default='logistic',
+        verbose_name=_('Growth'),
+        help_text=_('The growth model to use for the predictor.'),
+    )
+
+    def __str__(self):
+        return f"Predictor Config for {self.metric.name}"
+
+    class Meta:
+        verbose_name = _('Predictor Config')
+        verbose_name_plural = _('Predictor Configs')
+
+
+class MetricValue(H3Model, LifecycleModelMixin):
     """
     Model to store the raw and predicted values of a metric.
     """
@@ -122,21 +166,18 @@ class MetricValue(H3Model):
         help_text=_('The metric associated to the value.')
     )
     time = models.DateTimeField(
-        null=False,
-        blank=False,
+        null=False, blank=False,
         verbose_name=_('Time'),
         help_text=_('The time in which the raw value was recorded. Maximum precision is one minute.'),
     )
     value = RealField(
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Value'),
         help_text=_('The actual value of the raw data.'),
     )
     type = models.PositiveSmallIntegerField(
         choices=MetricValueType.choices,
-        null=False,
-        blank=False,
+        null=False, blank=False,
         verbose_name=_('Type'),
         help_text=_('The type of the raw value.')
     )
@@ -146,26 +187,22 @@ class MetricValue(H3Model):
     # (metric_id, h3_index, time) to be able to link that model with the MetricValue model.
     # It is preferible then to have these fields nullable (null takes only 1 bit per nullable field).
     predicted_value = RealField(
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Value'),
         help_text=_('The predicted value.')
     )
     lower_confidence_band = RealField(
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Lower Confidence Band'),
         help_text=_('The lower confidence band of the predicted value.')
     )
     upper_confidence_band = RealField(
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Upper Confidence Band'),
         help_text=_('The upper confidence band of the predicted value.')
     )
     anomaly_degree = RealField(
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Anomaly Degree'),
         help_text=_('The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the '
                     'highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that '
@@ -174,10 +211,11 @@ class MetricValue(H3Model):
 
     objects = MetricValueManager()
 
-    def refresh_prediction(self, refresh_progress: bool = True) -> None:
+    def refresh_prediction(self) -> None:
         """
         (Async) Invokes the predictor and assign the Prediction fields.
         """
+        pass
         # refresh_prediction_task(self.metric.id, self.h3_index, self.time, refresh_progress=refresh_progress)
         # refresh_prediction_task.delay(self.metric.id, self.h3_index, self.time, refresh_progress=refresh_progress)
 
@@ -207,26 +245,41 @@ class MetricValue(H3Model):
 
         return anomaly_degree
 
-    def save(self, *args, **kwargs):
-        is_adding = self._state.adding  # A new object is being created
-        # TODO: From kwargs get the update_fields and depending if the "value" or "time" is in there,
-        # execute the following code or not.
+    def clean(self):
+        # H3 Index Validation
+        try:
+            int(self.h3_index, 16)
+        except ValueError:
+            raise ValidationError("Invalid H3 index. Needs to be hexadecimal.")
+        if not h3.is_valid_cell(self.h3_index):
+            raise ValidationError(
+                "The H3 index must be a valid H3 cell."
+            )
+        if h3.get_resolution(self.h3_index) != self.metric.h3_resolution:
+            raise ValidationError(
+                "The H3 index must have the same resolution as the metric."
+            )
+
+        # Value Validation
         if self.value is not None and math.isnan(self.value):
             self.value = None
+        if self.value is None and self.predicted_value is None:
+            raise ValidationError(
+                "Either 'value' or 'predicted_value' must be provided."
+            )
+        if self._state.adding or self.has_changed(field_name='time'):
+            self.time = clean_time_field(self.time, self.metric)
 
-        # Round time to minute precision
-        self.time = self.time.replace(second=0, microsecond=0)
-        # Round time to Metric.time_dimension_step precision
-        if self.metric.time_dimension_step == Metric.TimeDimensionStepType.HOURLY:
-            self.time = self.time.replace(minute=0)
-        elif self.metric.time_dimension_step == Metric.TimeDimensionStepType.DAILY:
-            self.time = self.time.replace(hour=0, minute=0)
+        super().clean()
+
+    def save(self, *args, **kwargs):
+        self.clean()
 
         # Save the initial Metric with the prediction values and the predictor to None.
         super().save(*args, **kwargs)
 
-        # Assign a predictor to the Metric and set the prediction values.
-        if is_adding:
+        # Create the MetricStatistics associated if it doesn't exist and predict values if applicable.
+        if self._state.adding:  # A new object is being created
             MetricStatistics.objects.get_or_create(
                 time=self.time,
                 metric=self.metric,
@@ -234,13 +287,6 @@ class MetricValue(H3Model):
             if self.metric.is_predictable:
                 # If the Metric is being created, we need to assign a predictor and refresh the prediction
                 self.refresh_prediction()
-
-    def clean(self):
-        super().clean()
-        if self.value is None and self.predicted_value is None:
-            raise ValidationError(
-                "Either 'value' or 'predicted_value' must be provided."
-            )
 
     class Meta:
         constraints = [
@@ -267,73 +313,6 @@ class MetricValue(H3Model):
         return f"{self.metric.name} on {self.time} for {self.h3_index}: {self.value}"
 
 
-class PredictorConfig(models.Model):
-    """
-    Model to store the configuration of the predictor.
-    """
-    metric = models.OneToOneField(
-        Metric,
-        on_delete=models.CASCADE,
-        related_name='predictor_config',
-        verbose_name=_('Metric'),
-        help_text=_('The metric associated to the predictor configuration.')
-    )
-    yearly_seasonality = models.BooleanField(
-        default=True,
-        blank=False,
-        null=False,
-        verbose_name=_('Yearly Seasonality'),
-        help_text=_('Whether the predictor should consider yearly seasonality.')
-    )
-    weekly_seasonality = models.BooleanField(
-        default=False,
-        blank=False,
-        null=False,
-        verbose_name=_('Weekly Seasonality'),
-        help_text=_('Whether the predictor should consider weekly seasonality.')
-    )
-    daily_seasonality = models.BooleanField(
-        default=False,
-        blank=False,
-        null=False,
-        verbose_name=_('Daily Seasonality'),
-        help_text=_('Whether the predictor should consider daily seasonality.')
-    )
-    growth = models.CharField(
-        max_length=32,
-        default='logistic',
-        blank=False,
-        null=False,
-        verbose_name=_('Growth'),
-        help_text=_('The growth model to use for the predictor.'),
-    )
-    # TODO: Not days, but depending on the time_dimension_step
-    expiry_days = models.PositiveIntegerField(
-        default=30,
-        blank=False,
-        null=False,
-        verbose_name=_('Expiry Days'),
-        help_text=_('The number of days the predictor is valid for.')
-    )
-    # TODO: Maybe delete this columns and get the value from the smaller seasonality active.length * 2
-    # Si el count es menor de  30 puntos, esperar a tener más datos
-    # Antes de tener datos entrenados, banda con los valores max y min del histórico no entrenado.
-    min_days_for_training = models.PositiveIntegerField(
-        default=30,
-        blank=False,
-        null=False,
-        verbose_name=_('Minimum Days for Training'),
-        help_text=_('The minimum number of days of historical data required for training the predictor.')
-    )
-
-    def __str__(self):
-        return f"Predictor Config for {self.metric.name}"
-
-    class Meta:
-        verbose_name = _('Predictor Config')
-        verbose_name_plural = _('Predictor Configs')
-
-
 class MetricStatistics(models.Model):
     """
     Model to store the metric statistics  information.
@@ -347,39 +326,53 @@ class MetricStatistics(models.Model):
         help_text=_('The metric associated to the statistics.')
     )
     time = models.DateTimeField(
-        unique=True,
-        null=False,
-        blank=False,
+        unique=True, null=False, blank=False,
         verbose_name=_('Time'),
-        help_text=_('The date and time of the execution.')
+        help_text=_('The date and time of the metric values.')
     )
-    # Percentage of values successfully predicted and saved.
-    prediction_progress = models.FloatField(
-        null=True,
-        blank=True,
-        verbose_name=_('Success percentage'),
-        help_text=_('The percentage of success of the execution.'),
+    total_cells = models.IntegerField(
+        null=False, blank=True, default=0,
+        verbose_name=_('Total Cells'),
+        help_text=_('The total number of cells.')
+    )
+    total_cells_completed = models.IntegerField(
+        null=True, blank=True,
+        verbose_name=_('Total Cells Completed'),
+        help_text=_('The total number of cells processed with a prediction.'),
+    )
+    prediction_progress = models.GeneratedField(
+        expression=models.Case(
+            models.When(total_cells_completed__isnull=True, then=models.Value(None)),
+            default=models.F('total_cells_completed') * 1.0 / models.F('total_cells')
+        ),
+        output_field=RealField(),
+        # If db_persist is set to false, then the field will not be persisted in the database
+        # and the computed value will be calculated on the READ queries, which is not optimal.
+        db_persist=True,
+        null=True, blank=True,
+        verbose_name=_('Prediction Progress'),
+        help_text=_('The percentage of cells completed with a prediction.'),
         validators=[MinValueValidator(0), MaxValueValidator(1)]
     )
 
-    @classmethod
-    def refresh(cls, metric: Metric, time: datetime) -> None:
-        with transaction.atomic():
-            metric_values_qs = MetricValue.objects.filter(metric=metric, time=time)
-            total = metric_values_qs.count()
-            total_finished = metric_values_qs.filter(predicted_value__isnull=False).count()
+    def increase_total_cells_completed(self, inc_value=1):
+        """
+        Increment the total finished count.
+        """
+        self.total_cells_completed = models.Case(
+            models.When(total_cells_completed__isnull=True, then=models.Value(inc_value)),
+            default=models.F('total_cells_completed') + inc_value
+        )
+        self.save(update_fields=['total_cells_completed'])
 
-            prediction_progress = 0
-            if total > 0:
-                prediction_progress = total_finished / total
-
-            cls.objects.update_or_create(
-                time=time,
-                defaults={'prediction_progress': prediction_progress}
-            )
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            # If the primary key is not set, then this is a new object
+            self.total_cells = self.metric.values.filter(time=self.time).count()
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Statistics for the metric metric {self.metric.name} at {self.time}."
+        return f"Statistics for the metric {self.metric.name} at {self.time}."
 
     class Meta:
         ordering = ['time']
@@ -403,39 +396,34 @@ class MetricRegionalStatistics(models.Model):
         help_text=_('The metric associated to the regional statistics.')
     )
     h3_index = H3Field(
-        null=False,
-        blank=False,
+        null=False, blank=False,
         verbose_name=_('H3 Index'),
         help_text=_('The H3 index of the region.'),
     )
     trend = ArrayField(
         base_field=RealField(),
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Trend'),
         help_text=_('The predicted trend for the metric.')
     )
     yearly_seasonality = ArrayField(  # ! CAREFUL: The type ArrayField only works in PostgreSQL
         base_field=RealField(),  # ! CAREFUL: The type RealField only works in PostgreSQL
         size=365,
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Yearly Seasonality'),
         help_text=_('The predicted yearly seasonality for the metric.')
     )
     weekly_seasonality = ArrayField(
         base_field=RealField(),
         size=7,
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Weekly Seasonality'),
         help_text=_('The predicted weekly seasonality for the metric.')
     )
     daily_seasonality = ArrayField(
         base_field=RealField(),
         size=24,
-        null=True,
-        blank=True,
+        null=True, blank=True,
         verbose_name=_('Daily Seasonality'),
         help_text=_('The predicted daily seasonality for the metric.')
     )

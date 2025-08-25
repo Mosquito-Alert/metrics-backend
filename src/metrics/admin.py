@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
-from src.metrics.models import Metric, PredictorConfig, MetricStatistics
+from src.metrics.models import Metric, MetricRegionalStatistics, PredictorConfig, MetricStatistics
 
 
 @admin.register(Metric)
@@ -56,22 +56,20 @@ class PredictorConfigAdmin(admin.ModelAdmin):
         }),
     )
 
-# NOTE: Composite primary keys cannot be registered in the Django admin at this time.
-# https://docs.djangoproject.com/en/5.2/topics/composite-primary-key/
-# @admin.register(Predictor)
-# class PredictorAdmin(admin.ModelAdmin):
-#     list_display = ('metric', 'h3_index', 'last_training_date',)
-#     search_fields = ('metric__name', 'h3_index')
-#     list_filter = ('metric')
-#     ordering = ['-last_training_date']
-#     fieldsets = (
-#         (_('General'), {
-#             'fields': ['metric', 'h3_index', 'last_training_date', 'weights']
-#         }),
-#         (_('Predictions'), {
-#             'fields': ['yearly_seasonality', 'weekly_seasonality', 'daily_seasonality', 'trend']
-#         }),
-#     )
+
+@admin.register(MetricRegionalStatistics)
+class MetricRegionalStatisticsAdmin(admin.ModelAdmin):
+    list_display = ('metric', 'h3_index')
+    search_fields = ('metric__name', 'h3_index')
+    list_filter = ('metric',)
+    fieldsets = (
+        (_('General'), {
+            'fields': ['metric', 'h3_index']
+        }),
+        (_('Predictions'), {
+            'fields': ['yearly_seasonality', 'weekly_seasonality', 'daily_seasonality', 'trend']
+        }),
+    )
 
 
 @admin.register(MetricStatistics)

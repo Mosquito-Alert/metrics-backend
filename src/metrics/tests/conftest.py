@@ -1,11 +1,9 @@
 from django.conf import settings
 from django.db import reset_queries, connection as db_connection
 import pytest
-from django.contrib.gis.geos import MultiPolygon, Polygon
 
-from src.regions.models import (AutonomousCommunity, Country,
-                                Municipality, Province)
-from src.metrics.models import Metric, MetricExecution, MetricSeasonality
+from src.metrics.models import Metric, MetricRegionalStatistics, MetricStatistics, MetricValue, PredictorConfig
+from . import utils
 
 
 @pytest.fixture
@@ -17,134 +15,120 @@ def connection():
     return db_connection
 
 
-@pytest.fixture
-def multipolygon():
-    """Fixture to create a MultiPolygon instance."""
-    # Create a MultiPolygon instance with one polygon
-    polygon = Polygon(((0, 0), (1, 1), (1, 0), (0, 0)))
-    multipolygon = MultiPolygon(polygon)
-    return multipolygon
-
-
-@pytest.fixture
-def municipality(multipolygon):
-    """Fixture to create a Municipality instance."""
-    country = Country.objects.create(
-        code='ESP',
-        name='Spain',
-        alt_name='Espana',
-        continent='Europe',
-    )
-    autonomous_community = AutonomousCommunity.objects.create(
-        code='ESP.1_1',
-        name='Test Autonomous Community',
-        alt_name='Test Alt Name',
-        country=country,
-        geometry=multipolygon
-    )
-    province = Province.objects.create(
-        code='ESP.1.1_1',
-        name='Test Province',
-        alt_name='Test Alt Name',
-        autonomous_community=autonomous_community,
-        geometry=multipolygon
-    )
-    municipality1 = Municipality.objects.create(
-        code='ESP.1.1.1.1_1',
-        name='Test Municipality',
-        alt_name='Test Alt Name',
-        province=province,
-        geometry=multipolygon
-    )
-    municipality2 = Municipality.objects.create(
-        code='ESP.1.1.1.2_1',
-        name='Test Municipality 2',
-        alt_name='Test Alt Name 2',
-        province=province,
-        geometry=multipolygon
-    )
-    return municipality1, municipality2
-
-
 # TODO: Use factory_boy
 @pytest.fixture
-def metrics(municipality):
+def metrics():
     """Fixture to create a Metric instance."""
-    municipality1, municipality2 = municipality
     metric1 = Metric.objects.create(
-        region=municipality1,
-        date='2023-01-01',
-        value=0.8,
-        predicted_value=0.85,
-        lower_value=0.5,
-        upper_value=1.0,
-        trend=0.1,
+        name="Metric 1",
+        code="metric_1",
+        time_dimension_step=Metric.TimeDimensionStepType.DAILY,
+        is_predictable=True,
+        h3_resolution=6
     )
     metric2 = Metric.objects.create(
-        region=municipality1,
-        date='2023-01-02',
-        value=0.9,
-        predicted_value=0.75,
-        lower_value=0.6,
-        upper_value=0.8,
-        trend=0.2,
+        name="Metric 2",
+        code="metric_2",
+        time_dimension_step=Metric.TimeDimensionStepType.HOURLY,
+        is_predictable=False,
+        h3_resolution=7
     )
-    metric3 = Metric.objects.create(
-        region=municipality1,
-        date='2023-01-03',
-        value=0.4,
-        predicted_value=0.75,
-        lower_value=0.5,
-        upper_value=0.9,
-        trend=0.3,
-    )
-    metric4 = Metric.objects.create(
-        region=municipality2,
-        date='2023-01-03',
-        value=0.7,
-        predicted_value=0.85,
-        lower_value=0.4,
-        upper_value=0.9,
-        trend=0.1,
-    )
-    return metric1, metric2, metric3, metric4
+    return metric1, metric2
 
 
 @pytest.fixture
-def seasonalities(municipality):
-    """Fixture to create a MetricSeasonality instance."""
-    municipality1, municipality2 = municipality
-    seasonality1 = MetricSeasonality.objects.create(
-        region=municipality1,
-        index=0,
-        yearly_value=0.5
+def predictor_configs(metrics):
+    """Fixture to create a PredictorConfig instance."""
+    metric1, metric2 = metrics
+    predictor_config1 = PredictorConfig.objects.create(
+        metric=metric1,
+        yearly_seasonality=True,
+        weekly_seasonality=False,
+        daily_seasonality=False,
+        growth='linear'
     )
-    seasonality2 = MetricSeasonality.objects.create(
-        region=municipality1,
-        index=1,
-        yearly_value=0.6
+    predictor_config2 = PredictorConfig.objects.create(
+        metric=metric2,
+        yearly_seasonality=False,
+        weekly_seasonality=True,
+        daily_seasonality=True,
+        growth='logistic'
     )
-    seasonality3 = MetricSeasonality.objects.create(
-        region=municipality2,
-        index=0,
-        yearly_value=0.65
-    )
-    return seasonality1, seasonality2, seasonality3
+    return predictor_config1, predictor_config2
 
 
 @pytest.fixture
-def metric_executions():
-    """Fixture to create a MetricExecution instance."""
-    metric_execution1 = MetricExecution.objects.create(
-        date='2024-01-31',
-        success_percentage=0.99
+def metric_values(metrics):
+    """Fixture to create MetricValue instances."""
+    metric1, metric2 = metrics
+    metric_value1 = MetricValue.objects.create(
+        metric=metric1,
+        h3_index=utils.h3_index1,
+        time=utils.time1,
+        value=0.123,
+        type=MetricValue.MetricValueType.REANALYSIS
     )
-    metric_execution2 = MetricExecution.objects.create(
-        date='2024-01-30',
-        success_percentage=1
+    metric_value2 = MetricValue.objects.create(
+        metric=metric1,
+        h3_index=utils.h3_index2,
+        time=utils.time1,
+        value=0.456,
+        type=MetricValue.MetricValueType.REANALYSIS,
+        predicted_value=0.654,
+        lower_confidence_band=0.500,
+        upper_confidence_band=0.800
     )
-    metric_execution3 = MetricExecution.objects.create(
-        date='2025-01-30',
-        success_percentage=0.93
+    metric_value3 = MetricValue.objects.create(
+        metric=metric1,
+        h3_index=utils.h3_index3,
+        time=utils.time1,
+        value=0.789,
+        type=MetricValue.MetricValueType.FORECAST
     )
-    return metric_execution1, metric_execution2, metric_execution3
+    metric_value4 = MetricValue.objects.create(
+        metric=metric1,
+        h3_index=utils.h3_index1,
+        time=utils.time2,
+        value=0.489,
+        type=MetricValue.MetricValueType.REANALYSIS
+    )
+    metric_value5 = MetricValue.objects.create(
+        metric=metric2,
+        h3_index=utils.h3_index1,
+        time=utils.time1,
+        value=0.125,
+        type=MetricValue.MetricValueType.REANALYSIS
+    )
+    return metric_value1, metric_value2, metric_value3, metric_value4, metric_value5
+
+
+@pytest.fixture
+def metric_statistics(metrics):
+    """Fixture to create a MetricStatistics instance."""
+    metric1, metric2 = metrics
+    metric_statistics1 = MetricStatistics.objects.create(
+        metric=metric1,
+        time=utils.time1,
+    )
+    metric_statistics2 = MetricStatistics.objects.create(
+        metric=metric2,
+        time=utils.time2,
+    )
+    return metric_statistics1, metric_statistics2
+
+
+@pytest.fixture
+def metric_regional_statistics(metrics):
+    """Fixture to create a MetricRegionalStatistics instance."""
+    metric1, metric2 = metrics
+    metric_regional_statistics1 = MetricRegionalStatistics.objects.create(
+        metric=metric1,
+        region=utils.region1,
+        time=utils.time1,
+    )
+    metric_regional_statistics2 = MetricRegionalStatistics.objects.create(
+        metric=metric2,
+        region=utils.region2,
+        time=utils.time2,
+    )
+    return metric_regional_statistics1, metric_regional_statistics2

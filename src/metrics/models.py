@@ -224,7 +224,7 @@ class MetricValue(H3Model, LifecycleModelMixin):
         Calculates the anomaly degree based on the value and confidence bands.
         """
         anomaly_degree = None
-        if self.value is not None:
+        if self.value is not None and self.lower_confidence_band is not None and self.upper_confidence_band is not None:
             if self.value == 0:
                 # Handle the value == 0 case explicitly
                 if self.upper_confidence_band < 0:
@@ -249,7 +249,7 @@ class MetricValue(H3Model, LifecycleModelMixin):
         # H3 Index Validation
         try:
             int(self.h3_index, 16)
-        except ValueError:
+        except TypeError:
             raise ValidationError("Invalid H3 index. Needs to be hexadecimal.")
         if not h3.is_valid_cell(self.h3_index):
             raise ValidationError(
@@ -275,11 +275,14 @@ class MetricValue(H3Model, LifecycleModelMixin):
     def save(self, *args, **kwargs):
         self.clean()
 
+        self.anomaly_degree = self.calculate_anomaly_degree()
+
+        is_adding = self._state.adding
         # Save the initial Metric with the prediction values and the predictor to None.
         super().save(*args, **kwargs)
 
         # Create the MetricStatistics associated if it doesn't exist and predict values if applicable.
-        if self._state.adding:  # A new object is being created
+        if is_adding:  # A new object is being created
             MetricStatistics.objects.get_or_create(
                 time=self.time,
                 metric=self.metric,
@@ -306,8 +309,8 @@ class MetricValue(H3Model, LifecycleModelMixin):
         indexes = [
             models.Index(fields=['metric', 'h3_index', 'time'],)
         ]
-        verbose_name = _('Value')
-        verbose_name_plural = _('Values')
+        verbose_name = _('Metric Value')
+        verbose_name_plural = _('Metric Values')
 
     def __str__(self):
         return f"{self.metric.name} on {self.time} for {self.h3_index}: {self.value}"
@@ -326,7 +329,7 @@ class MetricStatistics(models.Model):
         help_text=_('The metric associated to the statistics.')
     )
     time = models.DateTimeField(
-        unique=True, null=False, blank=False,
+        null=False, blank=False,
         verbose_name=_('Time'),
         help_text=_('The date and time of the metric values.')
     )
@@ -375,6 +378,11 @@ class MetricStatistics(models.Model):
         return f"Statistics for the metric {self.metric.name} at {self.time}."
 
     class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['metric', 'time'], name='unique_metric_statistics'
+            ),
+        ]
         ordering = ['time']
         indexes = [
             models.Index(fields=['-time'])

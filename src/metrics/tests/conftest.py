@@ -31,7 +31,7 @@ def metrics():
         code="metric_2",
         time_dimension_step=Metric.TimeDimensionStepType.HOURLY,
         is_predictable=False,
-        h3_resolution=7
+        h3_resolution=8
     )
     return metric1, metric2
 
@@ -94,12 +94,12 @@ def metric_values(metrics):
     )
     metric_value5 = MetricValue.objects.create(
         metric=metric2,
-        h3_index=utils.h3_index1,
+        h3_index=utils.h3_index_lvl8,
         time=utils.time1,
         value=0.125,
         type=MetricValue.MetricValueType.REANALYSIS
     )
-    return metric_value1, metric_value2, metric_value3, metric_value4, metric_value5
+    return metric_value1, metric_value2,  metric_value3, metric_value4, metric_value5
 
 
 @pytest.fixture

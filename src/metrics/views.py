@@ -67,7 +67,7 @@ class MetricValueViewSet(GenericViewSet, ListModelMixin):
         The endpoint accepts a **CSV file** with the following filename format:
         "**{type}_YYYY-MM-DD[TXX.XX.XXXZ].csv**", where [TXX.XX.XXXZ] is the time part, which is optional, and
         where "Z" could be replaced by the timezone (+XX:XX).
-        The type is the type of the metric (accepted values: "forecast", "reanalysis").
+        The type is the type of the metric value (accepted values: "forecast", "reanalysis").
         The Regex pattern is:
         ^([a-zA-Z\\-]+)_((?:\\d{4}-\\d{2}-\\d{2})(?:T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2}))?)\\.csv$\n
 

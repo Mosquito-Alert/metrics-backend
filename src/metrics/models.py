@@ -257,7 +257,7 @@ class MetricValue(H3Model, LifecycleModelMixin):
             )
         if h3.get_resolution(self.h3_index) != self.metric.h3_resolution:
             raise ValidationError(
-                "The H3 index must have the same resolution as the metric."
+                f"The H3 index ({self.h3_index}) must have the same resolution as the metric."
             )
 
         # Value Validation

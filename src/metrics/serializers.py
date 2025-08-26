@@ -189,6 +189,8 @@ class MetricFileSerializer(Serializer):
             metrics_to_create.append(obj)
 
         # Create the metrics without the prediction values
+        # TODO: If there is already a metric value created, override it if the type changes from forecast to
+        # reanalysis, or it keeps being forecast --> update_fields
         objs = models.MetricValue.objects.bulk_create(metrics_to_create, batch_size=2000)
 
         # Perform prediction for each metric

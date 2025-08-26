@@ -308,3 +308,56 @@ class TestMetricValue:
             time=value1.time
         )
         assert stats.exists()
+
+    def test_metric_statistics_total_cells(self, metric_values):
+        """
+        Test that the total cells field is calculated correctly at creation.
+        """
+        metric_value1, _, _, _, _ = metric_values
+        stats = MetricStatistics.objects.get(
+            metric=metric_value1.metric,
+            time=metric_value1.time
+        )
+
+        assert stats.total_cells == 3
+
+
+@pytest.mark.django_db
+class TestMetricStatistics:
+
+    def test_create_metric_statistics(self,  metric_statistics):
+        """
+        Test the creation automatic of a MetricStatistics instance when a value is created.
+        """
+        stats1, _ = metric_statistics
+        assert isinstance(stats1, MetricStatistics)
+        assert stats1.metric.code == 'metric_1'
+        assert stats1.time == datetime.strptime('2025-01-01', '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        assert stats1.total_cells_completed is None
+        assert stats1.prediction_progress is None
+
+    def test_metric_statistics_meta(self):
+        """
+        Test the Meta class of the MetricStatistics model.
+        """
+        assert MetricStatistics._meta.verbose_name == 'Metric Statistics'
+        assert MetricStatistics._meta.verbose_name_plural == 'Metric Statistics'
+        assert MetricStatistics._meta.ordering == ['metric', '-time']
+        assert len(MetricStatistics._meta.constraints) == 1
+        assert MetricStatistics._meta.indexes[0].fields == ['metric', 'time']
+
+    def test_increase_total_cells_completed(self, metric_statistics):
+        """
+        Test the increase of total_cells_completed when the method is invoked.
+        Also, assert that the prediction_progress is correctly updated.
+        """
+        stats1, _ = metric_statistics
+        stats1.total_cells = 3
+        stats1.total_cells_completed = 0
+        stats1.save()
+
+        stats1.increase_total_cells_completed(inc_value=2)
+        stats1.refresh_from_db()
+
+        assert stats1.total_cells_completed == 2
+        assert round(stats1.prediction_progress, 4) == 0.6667

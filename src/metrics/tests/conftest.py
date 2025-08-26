@@ -99,7 +99,7 @@ def metric_values(metrics):
         value=0.125,
         type=MetricValue.MetricValueType.REANALYSIS
     )
-    return metric_value1, metric_value2,  metric_value3, metric_value4, metric_value5
+    return metric_value1, metric_value2, metric_value3, metric_value4, metric_value5
 
 
 @pytest.fixture

@@ -175,6 +175,7 @@ class MetricValue(H3Model, LifecycleModelMixin):
         verbose_name=_('Value'),
         help_text=_('The actual value of the raw data.'),
     )
+    # TODO: Move it to satistics
     type = models.PositiveSmallIntegerField(
         choices=MetricValueType.choices,
         null=False, blank=False,
@@ -281,11 +282,12 @@ class MetricValue(H3Model, LifecycleModelMixin):
         # Save the initial Metric with the prediction values and the predictor to None.
         super().save(*args, **kwargs)
 
-        # Create the MetricStatistics associated if it doesn't exist and predict values if applicable.
         if is_adding:  # A new object is being created
-            MetricStatistics.objects.get_or_create(
+            # Create the MetricStatistics associated if it doesn't exist and predict values if applicable.
+            MetricStatistics.objects.update_or_create(
                 time=self.time,
                 metric=self.metric,
+                defaults={'total_cells': models.F('total_cells') + 1}
             )
             if self.metric.is_predictable:
                 # If the Metric is being created, we need to assign a predictor and refresh the prediction
@@ -367,10 +369,10 @@ class MetricStatistics(models.Model):
             default=models.F('total_cells_completed') + inc_value
         )
         self.save(update_fields=['total_cells_completed'])
+        self.refresh_from_db(fields=['total_cells_completed'])
 
     def save(self, *args, **kwargs):
-        if not self.pk:
-            # If the primary key is not set, then this is a new object
+        if self._state.adding:
             self.total_cells = self.metric.values.filter(time=self.time).count()
         super().save(*args, **kwargs)
 
@@ -383,12 +385,12 @@ class MetricStatistics(models.Model):
                 fields=['metric', 'time'], name='unique_metric_statistics'
             ),
         ]
-        ordering = ['time']
+        ordering = ['metric', '-time']
         indexes = [
-            models.Index(fields=['-time'])
+            models.Index(fields=['metric', 'time'])
         ]
         verbose_name = "Metric Statistics"
-        verbose_name_plural = "Metrics Statistics"
+        verbose_name_plural = "Metric Statistics"
 
 
 class MetricRegionalStatistics(models.Model):

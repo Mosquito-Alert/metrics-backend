@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import reset_queries, connection as db_connection
 import pytest
 
-from src.metrics.models import Metric, MetricRegionalStatistics, MetricStatistics, MetricValue, PredictorConfig
+from src.metrics.models import Metric, MetricSpatialDimension, MetricTimeDimension, MetricValue, PredictorConfig
 from . import utils
 
 
@@ -58,74 +58,77 @@ def predictor_configs(metrics):
 
 
 @pytest.fixture
-def metric_values(metrics):
-    """Fixture to create MetricValue instances."""
+def metric_time_dimensions(metrics):
+    """Fixture to create a MetricTimeDimension instance."""
     metric1, metric2 = metrics
-    metric_value1 = MetricValue.objects.create(
+    metric_time_dimension1 = MetricTimeDimension.objects.create(
+        metric=metric1,
+        time=utils.time1,
+        type=MetricTimeDimension.MetricValueType.REANALYSIS
+    )
+    metric_time_dimension2 = MetricTimeDimension.objects.create(
+        metric=metric1,
+        time=utils.time2,
+        type=MetricTimeDimension.MetricValueType.FORECAST
+    )
+    metric_time_dimension3 = MetricTimeDimension.objects.create(
+        metric=metric2,
+        time=utils.time1,
+        type=MetricTimeDimension.MetricValueType.REANALYSIS
+    )
+    return metric_time_dimension1, metric_time_dimension2, metric_time_dimension3
+
+
+@pytest.fixture
+def metric_spatial_dimensions(metrics):
+    """Fixture to create a MetricSpatialDimension instance."""
+    metric1, metric2 = metrics
+    metric_spatial_dimension1 = MetricSpatialDimension.objects.create(
         metric=metric1,
         h3_index=utils.h3_index1,
-        time=utils.time1,
+    )
+    metric_spatial_dimension2 = MetricSpatialDimension.objects.create(
+        metric=metric1,
+        h3_index=utils.h3_index2,
+    )
+    metric_spatial_dimension3 = MetricSpatialDimension.objects.create(
+        metric=metric2,
+        h3_index=utils.h3_index_lvl8,
+    )
+    return metric_spatial_dimension1, metric_spatial_dimension2, metric_spatial_dimension3
+
+
+@pytest.fixture
+def metric_values(metric_time_dimensions, metric_spatial_dimensions):
+    """Fixture to create MetricValue instances."""
+    time_dimension1, time_dimension2, time_dimension3 = metric_time_dimensions
+    spatial_dimension1, spatial_dimension2, spatial_dimension3 = metric_spatial_dimensions
+    metric_value1 = MetricValue.objects.create(
+        time_dimension=time_dimension1,
+        spatial_dimension=spatial_dimension1,
         value=0.123,
     )
     metric_value2 = MetricValue.objects.create(
-        metric=metric1,
-        h3_index=utils.h3_index2,
-        time=utils.time1,
+        time_dimension=time_dimension1,
+        spatial_dimension=spatial_dimension2,
         value=0.456,
+    )
+    metric_value3 = MetricValue.objects.create(
+        time_dimension=time_dimension2,
+        spatial_dimension=spatial_dimension1,
+        value=0.789,
         predicted_value=0.654,
         lower_confidence_band=0.500,
         upper_confidence_band=0.800
     )
     metric_value3 = MetricValue.objects.create(
-        metric=metric1,
-        h3_index=utils.h3_index3,
-        time=utils.time1,
+        time_dimension=time_dimension2,
+        spatial_dimension=spatial_dimension2,
         value=0.789,
     )
     metric_value4 = MetricValue.objects.create(
-        metric=metric1,
-        h3_index=utils.h3_index1,
-        time=utils.time2,
+        time_dimension=time_dimension3,
+        spatial_dimension=spatial_dimension3,
         value=0.489,
     )
-    metric_value5 = MetricValue.objects.create(
-        metric=metric2,
-        h3_index=utils.h3_index_lvl8,
-        time=utils.time1,
-        value=0.125,
-    )
-    return metric_value1, metric_value2, metric_value3, metric_value4, metric_value5
-
-
-@pytest.fixture
-def metric_statistics(metrics):
-    """Fixture to create a MetricStatistics instance."""
-    metric1, metric2 = metrics
-    metric_statistics1 = MetricStatistics.objects.create(
-        metric=metric1,
-        time=utils.time1,
-        type=MetricValue.MetricValueType.REANALYSIS
-    )
-    metric_statistics2 = MetricStatistics.objects.create(
-        metric=metric2,
-        time=utils.time2,
-        type=MetricValue.MetricValueType.FORECAST
-    )
-    return metric_statistics1, metric_statistics2
-
-
-@pytest.fixture
-def metric_regional_statistics(metrics):
-    """Fixture to create a MetricRegionalStatistics instance."""
-    metric1, metric2 = metrics
-    metric_regional_statistics1 = MetricRegionalStatistics.objects.create(
-        metric=metric1,
-        region=utils.region1,
-        time=utils.time1,
-    )
-    metric_regional_statistics2 = MetricRegionalStatistics.objects.create(
-        metric=metric2,
-        region=utils.region2,
-        time=utils.time2,
-    )
-    return metric_regional_statistics1, metric_regional_statistics2
+    return metric_value1, metric_value2, metric_value3, metric_value4

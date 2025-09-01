@@ -492,6 +492,7 @@ class MetricSpatialDimension(models.Model):
                 name='spatial_dimension_h3_index_must_be_valid'
             ),
         ]
+        ordering = ['metric', 'h3_index']
         indexes = [
             models.Index(fields=['metric', 'h3_index'])
         ]

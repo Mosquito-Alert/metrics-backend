@@ -3,7 +3,7 @@ from django.db import IntegrityError
 import pytest
 from django.core.exceptions import ValidationError
 
-from src.metrics.models import Metric, MetricStatistics, MetricValue, PredictorConfig
+from src.metrics.models import Metric, MetricSpatialDimension, MetricTimeDimension, MetricValue, PredictorConfig
 from . import utils
 
 
@@ -77,12 +77,17 @@ class TestMetricValue:
     Test the MetricValue model.
     """
 
-    def test_metric_value_creation(self, metric_values):
+    def test_metric_value_creation(self, metric_values, metric_spatial_dimensions, metric_time_dimensions):
         """
         Test the creation of a MetricValue instance.
         """
-        value1, _, _, _, _ = metric_values
+        value1, _, _, _ = metric_values
+        spatial_dimension1, _, _ = metric_spatial_dimensions
+        time_dimension1, _, _ = metric_time_dimensions
+
         assert isinstance(value1, MetricValue)
+        assert value1.spatial_dimension == spatial_dimension1
+        assert value1.time_dimension == time_dimension1
         assert value1.metric.code == 'metric_1'
         assert value1.h3_index == "860123507ffffff"
         assert value1.time == datetime.strptime('2025-01-01', '%Y-%m-%d').replace(tzinfo=timezone.utc)
@@ -98,43 +103,29 @@ class TestMetricValue:
         assert len(MetricValue._meta.constraints) == 3
         assert MetricValue._meta.indexes[0].fields == ['metric', 'h3_index', 'time']
 
-    # * Test H3 Index
-    def test_metric_value_invalid_h3_index_validation(self, metrics):
+    def test_metric_value_cannot_create_without_dimensions(self, metrics):
         """
-        Test the behavior of validation error when trying to create metric with invalid h3 index.
-        """
-        metric1, _ = metrics
-        with pytest.raises(ValidationError):
-            MetricValue.objects.create(
-                metric=metric1,
-                h3_index="000000000000000",  # Invalid H3 index
-                time=utils.time1,
-                value=0.123,
-            )
-
-    def test_metric_value_non_hexadecimal_h3_index_validation(self, metrics):
-        """
-        Test the behavior of validation error when trying to create metric with not an hexadecimal h3 index.
-        """
-        _, metric2 = metrics
-        with pytest.raises(ValidationError):
-            MetricValue.objects.create(
-                metric=metric2,
-                h3_index=603502369715519487,  # Non hexadecimal valid h3 index
-                time=utils.time1,
-                value=0.123,
-            )
-
-    def test_metric_value_invalid_resolution_h3_index_validation(self, metrics):
-        """
-        Test the behavior of validation error when trying to create metric with invalid resolution h3 index.
+        Test the behavior of validation error when trying to create metric without dimensions.
         """
         metric1, _ = metrics
         with pytest.raises(ValidationError):
             MetricValue.objects.create(
                 metric=metric1,
-                h3_index=utils.h3_index_lvl8,  # Valid h3 index but invalid resolution
+                h3_index=utils.h3_index1,
                 time=utils.time1,
+                value=0.123,
+            )
+
+    def test_metric_value_cannot_create_with_different_metric(self, metric_time_dimensions, metric_spatial_dimensions):
+        """
+        Test that when provided dimensions whose metric don't match, a validation error is raised.
+        """
+        time_dimension1, _, _ = metric_time_dimensions
+        _, _, spatial_dimension3 = metric_spatial_dimensions
+        with pytest.raises(ValidationError):
+            MetricValue.objects.create(
+                time_dimension=time_dimension1,
+                spatial_dimension=spatial_dimension3,
                 value=0.123,
             )
 
@@ -143,34 +134,38 @@ class TestMetricValue:
         """
         Test the behavior of MetricValue when is_predictable is False.
         """
-        _, _, _, _, value5 = metric_values
-        assert value5.metric.is_predictable is False
-        assert value5.predicted_value is None
-        assert value5.anomaly_degree is None
+        _, _, _, value4 = metric_values
+        assert value4.metric.is_predictable is False
+        assert value4.predicted_value is None
+        assert value4.anomaly_degree is None
 
-    def test_metric_value_and_predicted_value_false(self, metrics):
+    def test_metric_value_and_predicted_value_false(self, metric_time_dimensions, metric_spatial_dimensions):
         """
         Test the behavior of validation error when trying to create metric with value and predicted_value nulls.
         """
-        _, metric2 = metrics
+        time_dimension1, _, _ = metric_time_dimensions
+        spatial_dimension1, _, _ = metric_spatial_dimensions
         with pytest.raises(ValidationError):
             MetricValue.objects.create(
-                metric=metric2,
-                h3_index=utils.h3_index_lvl8,
-                time=utils.time1,
+                time_dimension=time_dimension1,
+                spatial_dimension=spatial_dimension1,
                 value=None,
             )
 
     # * Test Time Rounding
-    def test_metric_value_time_rounding(self, metrics):
+    def test_metric_value_time_rounding(self, metric_spatial_dimensions):
         """
         Test the rounding of time in MetricValue.
         """
-        _, metric2 = metrics
-        value = MetricValue.objects.create(
-            metric=metric2,
-            h3_index=utils.h3_index_lvl8,
+        _, _, spatial_dimension3 = metric_spatial_dimensions
+        time_dimension = MetricTimeDimension.objects.create(
+            metric=spatial_dimension3.metric,
             time=datetime.strptime('2025-01-01T12:34:56Z', '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc),
+            type=MetricTimeDimension.MetricValueType.REANALYSIS
+        )
+        value = MetricValue.objects.create(
+            time_dimension=time_dimension,
+            spatial_dimension=spatial_dimension3,
             value=0.123,
         )
         assert value.time == datetime.strptime('2025-01-01T12', '%Y-%m-%dT%H').replace(tzinfo=timezone.utc)
@@ -179,22 +174,22 @@ class TestMetricValue:
         """
         Test the rounding of time in MetricValue when an update is performed (model save method)
         """
-        value1, _, _, _, _ = metric_values
+        value1, _, _, _ = metric_values
         value1.time = datetime.strptime('2025-01-01T12:34:56Z', '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
         value1.save()
         assert value1.time == datetime.strptime('2025-01-01', '%Y-%m-%d').replace(tzinfo=timezone.utc)
 
     # * Test Anomaly Degree
-    def test_metric_value_anomaly_degree_zero_value(self, metrics):
+    def test_metric_value_anomaly_degree_zero_value(self, metric_time_dimensions, metric_spatial_dimensions):
         """
         Test calculate_anomaly_degree when value is zero.
         """
-        metric1, _ = metrics
+        time_dimension1, _, _ = metric_time_dimensions
+        spatial_dimension1, _, _ = metric_spatial_dimensions
         # Case: upper_confidence_band < 0
         value = MetricValue.objects.create(
-            metric=metric1,
-            h3_index=utils.h3_index1,
-            time=utils.time1,
+            time_dimension=time_dimension1,
+            spatial_dimension=spatial_dimension1,
             value=0.0,
             upper_confidence_band=-1.0,
             lower_confidence_band=0.0,
@@ -213,15 +208,15 @@ class TestMetricValue:
         value.save()
         assert value.anomaly_degree == 0.0
 
-    def test_metric_value_anomaly_degree_above_upper(self, metrics):
+    def test_metric_value_anomaly_degree_above_upper(self, metric_time_dimensions, metric_spatial_dimensions):
         """
         Test calculate_anomaly_degree when value is above upper confidence band.
         """
-        metric1, _ = metrics
+        time_dimension1, _, _ = metric_time_dimensions
+        spatial_dimension1, _, _ = metric_spatial_dimensions
         value = MetricValue.objects.create(
-            metric=metric1,
-            h3_index=utils.h3_index1,
-            time=utils.time1,
+            time_dimension=time_dimension1,
+            spatial_dimension=spatial_dimension1,
             value=10.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
@@ -229,15 +224,15 @@ class TestMetricValue:
         expected = (10.0 - 8.0) / 10.0
         assert value.anomaly_degree == expected
 
-    def test_metric_value_anomaly_degree_below_lower(self, metrics):
+    def test_metric_value_anomaly_degree_below_lower(self, metric_time_dimensions, metric_spatial_dimensions):
         """
         Test calculate_anomaly_degree when value is below lower confidence band.
         """
-        metric1, _ = metrics
+        time_dimension1, _, _ = metric_time_dimensions
+        spatial_dimension1, _, _ = metric_spatial_dimensions
         value = MetricValue.objects.create(
-            metric=metric1,
-            h3_index=utils.h3_index1,
-            time=utils.time1,
+            time_dimension=time_dimension1,
+            spatial_dimension=spatial_dimension1,
             value=1.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
@@ -245,30 +240,30 @@ class TestMetricValue:
         expected = (1.0 - 2.0) / 1.0
         assert value.anomaly_degree == expected
 
-    def test_metric_value_anomaly_degree_within_bands(self, metrics):
+    def test_metric_value_anomaly_degree_within_bands(self, metric_time_dimensions, metric_spatial_dimensions):
         """
         Test calculate_anomaly_degree when value is within confidence bands.
         """
-        metric1, _ = metrics
+        time_dimension1, _, _ = metric_time_dimensions
+        spatial_dimension1, _, _ = metric_spatial_dimensions
         value = MetricValue.objects.create(
-            metric=metric1,
-            h3_index=utils.h3_index1,
-            time=utils.time1,
+            time_dimension=time_dimension1,
+            spatial_dimension=spatial_dimension1,
             value=5.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
         )
         assert value.anomaly_degree == 0.0
 
-    def test_metric_value_anomaly_degree_none_value(self, metrics):
+    def test_metric_value_anomaly_degree_none_value(self, metric_time_dimensions, metric_spatial_dimensions):
         """
         Test calculate_anomaly_degree when value is None.
         """
-        metric1, _ = metrics
+        time_dimension1, _, _ = metric_time_dimensions
+        spatial_dimension1, _, _ = metric_spatial_dimensions
         value = MetricValue.objects.create(
-            metric=metric1,
-            h3_index=utils.h3_index1,
-            time=utils.time1,
+            time_dimension=time_dimension1,
+            spatial_dimension=spatial_dimension1,
             value=None,
             predicted_value=0.0,
             upper_confidence_band=8.0,
@@ -277,80 +272,146 @@ class TestMetricValue:
         assert value.anomaly_degree is None
 
     # * Others
-
-    def test_duplicate_key(self, metrics, metric_values):
+    def test_duplicate_key(self, metric_time_dimensions, metric_spatial_dimensions, metric_values):
         """
         Test the behavior of unique constraint when trying to create a duplicate MetricValue.
         """
-        metric1, _ = metrics
+        time_dimension1, _, _ = metric_time_dimensions
+        spatial_dimension1, _, _ = metric_spatial_dimensions
         with pytest.raises(IntegrityError):
             MetricValue.objects.create(
-                metric=metric1,
-                h3_index=utils.h3_index1,
-                time=utils.time1,
+                time_dimension=time_dimension1,
+                spatial_dimension=spatial_dimension1,
                 value=0.456,
             )
 
-    def test_create_metric_statistics(self,  metric_values):
-        """
-        Test the creation automatic of a MetricStatistics instance when a value is created.
-        """
-        value1, _, _, _, _ = metric_values
-        stats = MetricStatistics.objects.filter(
-            metric=value1.metric,
-            time=value1.time
-        )
-        assert stats.exists()
-
-    def test_metric_statistics_total_cells(self, metric_values):
-        """
-        Test that the total cells field is calculated correctly at creation.
-        """
-        metric_value1, _, _, _, _ = metric_values
-        stats = MetricStatistics.objects.get(
-            metric=metric_value1.metric,
-            time=metric_value1.time
-        )
-
-        assert stats.total_cells == 3
-
 
 @pytest.mark.django_db
-class TestMetricStatistics:
+class TestMetricTimeDimension:
+    """
+    Test the MetricTimeDimension model.
+    """
 
-    def test_create_metric_statistics(self,  metric_statistics):
+    def test_create_metric_time_dimension(self,  metric_time_dimensions):
         """
-        Test the creation automatic of a MetricStatistics instance when a value is created.
+        Test the creation automatic of a MetricTimeDimension instance when a value is created.
         """
-        stats1, _ = metric_statistics
-        assert isinstance(stats1, MetricStatistics)
-        assert stats1.metric.code == 'metric_1'
-        assert stats1.time == datetime.strptime('2025-01-01', '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        assert stats1.total_cells_completed is None
-        assert stats1.prediction_progress is None
+        time_dimension1, _, _ = metric_time_dimensions
+        assert isinstance(time_dimension1, MetricTimeDimension)
+        assert time_dimension1.metric.code == 'metric_1'
+        assert time_dimension1.time == datetime.strptime('2025-01-01', '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        assert time_dimension1.total_cells_completed is None
+        assert time_dimension1.prediction_progress is None
 
-    def test_metric_statistics_meta(self):
+    def test_metric_time_dimension_meta(self):
         """
-        Test the Meta class of the MetricStatistics model.
+        Test the Meta class of the MetricTimeDimension model.
         """
-        assert MetricStatistics._meta.verbose_name == 'Metric Statistics'
-        assert MetricStatistics._meta.verbose_name_plural == 'Metric Statistics'
-        assert MetricStatistics._meta.ordering == ['metric', '-time']
-        assert len(MetricStatistics._meta.constraints) == 1
-        assert MetricStatistics._meta.indexes[0].fields == ['metric', 'time']
+        assert MetricTimeDimension._meta.verbose_name == 'Metric Time Dimension'
+        assert MetricTimeDimension._meta.verbose_name_plural == 'Metric Time Dimensions'
+        assert MetricTimeDimension._meta.ordering == ['metric', '-time']
+        assert len(MetricTimeDimension._meta.constraints) == 1
+        assert MetricTimeDimension._meta.indexes[0].fields == ['metric', 'time']
 
-    def test_increase_total_cells_completed(self, metric_statistics):
+    def test_increase_total_cells(self, metric_time_dimensions):
+        """
+        Test the increase of total_cells when the method is invoked.
+        Also, assert that the prediction_progress is correctly updated.
+        """
+        time_dimension1, _, _ = metric_time_dimensions
+        time_dimension1.total_cells = 3
+        time_dimension1.save()
+
+        time_dimension1.increase_total_cells(inc_value=2)
+        time_dimension1.refresh_from_db()
+
+        assert time_dimension1.total_cells == 5
+
+    def test_increase_total_cells_completed(self, metric_time_dimensions):
         """
         Test the increase of total_cells_completed when the method is invoked.
         Also, assert that the prediction_progress is correctly updated.
         """
-        stats1, _ = metric_statistics
-        stats1.total_cells = 3
-        stats1.total_cells_completed = 0
-        stats1.save()
+        time_dimension1, _, _ = metric_time_dimensions
+        time_dimension1.total_cells = 3
+        time_dimension1.total_cells_completed = 0
+        time_dimension1.save()
 
-        stats1.increase_total_cells_completed(inc_value=2)
-        stats1.refresh_from_db()
+        time_dimension1.increase_total_cells_completed(inc_value=2)
+        time_dimension1.refresh_from_db()
 
-        assert stats1.total_cells_completed == 2
-        assert round(stats1.prediction_progress, 4) == 0.6667
+        assert time_dimension1.total_cells_completed == 2
+        assert round(time_dimension1.prediction_progress, 4) == 0.6667
+
+    def test_metric_time_dimensions_total_cells(self, metric_values):
+        """
+        Test that the total cells field is calculated correctly at creation.
+        """
+        metric_value1, _, _, _ = metric_values
+        stats = MetricTimeDimension.objects.get(
+            metric=metric_value1.metric,
+            time=metric_value1.time
+        )
+
+        assert stats.total_cells == 2
+
+
+@pytest.mark.django_db
+class TestMetricSpatialDimension:
+    """
+    Test the MetricSpatialDimension model.
+    """
+
+    def test_create_metric_spatial_dimension(self, metric_spatial_dimensions):
+        """
+        Test the creation automatic of a MetricSpatialDimension instance when a value is created.
+        """
+        spatial_dimension1, _, _ = metric_spatial_dimensions
+        assert isinstance(spatial_dimension1, MetricSpatialDimension)
+        assert spatial_dimension1.metric.code == 'metric_1'
+        assert spatial_dimension1.h3_index == utils.h3_index1
+        assert spatial_dimension1.trend is None
+
+    def test_metric_spatial_dimension_meta(self):
+        """
+        Test the Meta class of the MetricSpatialDimension model.
+        """
+        assert MetricSpatialDimension._meta.verbose_name == 'Metric Spatial Dimension'
+        assert MetricSpatialDimension._meta.verbose_name_plural == 'Metric Spatial Dimensions'
+        assert MetricSpatialDimension._meta.ordering == ['metric', 'h3_index']
+        assert len(MetricSpatialDimension._meta.constraints) == 2
+        assert MetricSpatialDimension._meta.indexes[0].fields == ['metric', 'h3_index']
+
+    # * Test H3 Index
+    def test_metric_spatial_dimension_invalid_h3_index_validation(self, metrics):
+        """
+        Test the behavior of validation error when trying to create metric with invalid h3 index.
+        """
+        metric1, _ = metrics
+        with pytest.raises(ValidationError):
+            MetricSpatialDimension.objects.create(
+                metric=metric1,
+                h3_index="000000000000000",  # Invalid H3 index
+            )
+
+    def test_metric_spatial_dimension_non_hexadecimal_h3_index_validation(self, metrics):
+        """
+        Test the behavior of validation error when trying to create metric with not an hexadecimal h3 index.
+        """
+        _, metric2 = metrics
+        with pytest.raises(ValidationError):
+            MetricSpatialDimension.objects.create(
+                metric=metric2,
+                h3_index=603502369715519487,  # Non hexadecimal valid h3 index
+            )
+
+    def test_metric_spatial_dimension_invalid_resolution_h3_index_validation(self, metrics):
+        """
+        Test the behavior of validation error when trying to create metric with invalid resolution h3 index.
+        """
+        metric1, _ = metrics
+        with pytest.raises(ValidationError):
+            MetricSpatialDimension.objects.create(
+                metric=metric1,
+                h3_index=utils.h3_index_lvl8,  # Valid h3 index but invalid resolution
+            )

@@ -34,12 +34,6 @@ class MetricValueFilter(BaseH3FilterSet):
         label='Time Range',
         required=False,
     )
-    type = filters.ChoiceFilter(
-        field_name='type',
-        choices=[(x.value, x.label) for x in models.MetricValue.MetricValueType],
-        label='Type',
-        required=False,
-    )
 
     order_by = filters.OrderingFilter(
         fields=(('time', 'time'),),
@@ -83,42 +77,48 @@ class MetricValueFilter(BaseH3FilterSet):
 
     class Meta(BaseH3FilterSet.Meta):
         model = models.MetricValue
-        fields = ['h3_index', 'time', 'type']
+        fields = ['h3_index', 'time']
 
 
-class MetricStatisticsFilter(filters.FilterSet):
-    """
-    Filter for MetricStatistics model.
-    """
-    time = filters.IsoDateTimeFromToRangeFilter(
-        field_name='time',
-        label='Time Range',
-        required=False,
-    )
-    prediction_progress_gte = filters.NumberFilter(
-        field_name='prediction_progress_gte',
-        lookup_expr='gte',
-        label='Prediction Progress Greater Than or Equal',
-        required=False,
-    )
+# class MetricStatisticsFilter(filters.FilterSet):
+#     """
+#     Filter for MetricStatistics model.
+#     """
+#     time = filters.IsoDateTimeFromToRangeFilter(
+#         field_name='time',
+#         label='Time Range',
+#         required=False,
+#     )
+#     prediction_progress_gte = filters.NumberFilter(
+#         field_name='prediction_progress_gte',
+#         lookup_expr='gte',
+#         label='Prediction Progress Greater Than or Equal',
+#         required=False,
+#     )
+#     type = filters.ChoiceFilter(
+#         field_name='type',
+#         choices=[(x.value, x.label) for x in models.MetricStatistics.MetricValueType],
+#         label='Type',
+#         required=False,
+#     )
 
-    order_by = filters.OrderingFilter(
-        fields=(('time', 'time'),),
-        field_labels={'time': 'Time', },
-        label='Order By',
-        required=False,
-    )
+#     order_by = filters.OrderingFilter(
+#         fields=(('time', 'time'),),
+#         field_labels={'time': 'Time', },
+#         label='Order By',
+#         required=False,
+#     )
 
-    def filter_queryset(self, queryset):
-        """
-        Filter by metric_id.
-        """
-        metric_id = self.data.get('metric_id')
-        if not metric_id:
-            return queryset.none()
+#     def filter_queryset(self, queryset):
+#         """
+#         Filter by metric_id.
+#         """
+#         metric_id = self.data.get('metric_id')
+#         if not metric_id:
+#             return queryset.none()
 
-        return super().filter_queryset(queryset.filter(metric_id=metric_id))
+#         return super().filter_queryset(queryset.filter(metric_id=metric_id))
 
-    class Meta:
-        model = models.MetricStatistics
-        fields = ['time', 'prediction_progress_gte']
+#     class Meta:
+#         model = models.MetricStatistics
+#         fields = ['time', 'prediction_progress_gte', 'type']

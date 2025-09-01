@@ -5,7 +5,7 @@ from typing import Optional, TypedDict
 from django_lifecycle import LifecycleModelMixin
 import h3
 from django.contrib.postgres.fields import ArrayField
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from rest_framework.fields import MaxValueValidator, MinValueValidator
@@ -20,25 +20,6 @@ class PredictionResult(TypedDict):
     yhat: float
     yhat_upper: float
     yhat_lower: float
-
-
-class H3Model(models.Model):
-    """
-    Model mixin to store the h3 index of a metric.
-    """
-    h3_index = H3Field(
-        null=False,
-        blank=False,
-        verbose_name=_('H3 Index'),
-        help_text=_(
-            'The H3 index of the metric value boundary, used for spatial queries. '
-            'This is stored as a bigInt to avoid issues with large indices, '
-            'so it should be converted to/from hex strings if necessary.'
-        ),
-    )
-
-    class Meta:
-        abstract = True
 
 
 class Metric(models.Model):
@@ -142,17 +123,10 @@ class PredictorConfig(models.Model):
         verbose_name_plural = _('Predictor Configs')
 
 
-class MetricValue(H3Model, LifecycleModelMixin):
+class MetricValue(models.Model, LifecycleModelMixin):
     """
     Model to store the raw and predicted values of a metric.
     """
-    class MetricValueType(models.IntegerChoices):
-        """
-        Type of the metric value.
-        """
-        REANALYSIS = 1, _('Reanalysis')
-        FORECAST = 2, _('Forecast')
-
     pk = models.CompositePrimaryKey(
         'metric', 'h3_index', 'time',
         verbose_name=_('Primary Key'),
@@ -160,13 +134,24 @@ class MetricValue(H3Model, LifecycleModelMixin):
     )
     metric = models.ForeignKey(
         Metric,
+        blank=True,
         on_delete=models.CASCADE,
         related_name='values',
         verbose_name=_('Metric'),
         help_text=_('The metric associated to the value.')
     )
+    h3_index = H3Field(
+        null=False,
+        blank=True,
+        verbose_name=_('H3 Index'),
+        help_text=_(
+            'The H3 index of the metric value boundary, used for spatial queries. '
+            'This is stored as a bigInt to avoid issues with large indices, '
+            'so it should be converted to/from hex strings if necessary.'
+        ),
+    )
     time = models.DateTimeField(
-        null=False, blank=False,
+        null=False, blank=True,
         verbose_name=_('Time'),
         help_text=_('The time in which the raw value was recorded. Maximum precision is one minute.'),
     )
@@ -175,12 +160,21 @@ class MetricValue(H3Model, LifecycleModelMixin):
         verbose_name=_('Value'),
         help_text=_('The actual value of the raw data.'),
     )
-    # TODO: Move it to satistics
-    type = models.PositiveSmallIntegerField(
-        choices=MetricValueType.choices,
-        null=False, blank=False,
-        verbose_name=_('Type'),
-        help_text=_('The type of the raw value.')
+    time_dimension = models.ForeignObject(
+        'MetricTimeDimension',
+        blank=False,
+        on_delete=models.CASCADE,
+        from_fields=['metric', 'time'],
+        to_fields=['metric', 'time'],
+        related_name='metric_values',
+    )
+    spatial_dimension = models.ForeignObject(
+        'MetricSpatialDimension',
+        blank=False,
+        on_delete=models.CASCADE,
+        from_fields=['metric', 'h3_index'],
+        to_fields=['metric', 'h3_index'],
+        related_name='metric_values',
     )
     # Predictor fields
     # NOTE: We can't separate these fields into a different model because TimescaleDB needs a composite
@@ -247,6 +241,18 @@ class MetricValue(H3Model, LifecycleModelMixin):
         return anomaly_degree
 
     def clean(self):
+        # Raise validationerror if time_dimension is not provided:
+        try:
+            self.time_dimension
+        except ObjectDoesNotExist:
+            raise ValidationError("Time dimension must be provided.")
+        try:
+            self.spatial_dimension
+        except ObjectDoesNotExist:
+            raise ValidationError("Spatial dimension must be provided.")
+        if self.time_dimension.metric != self.spatial_dimension.metric:
+            raise ValidationError("Time and spatial dimensions must be from the same metric.")
+
         # H3 Index Validation
         try:
             int(self.h3_index, 16)
@@ -279,16 +285,11 @@ class MetricValue(H3Model, LifecycleModelMixin):
         self.anomaly_degree = self.calculate_anomaly_degree()
 
         is_adding = self._state.adding
-        # Save the initial Metric with the prediction values and the predictor to None.
+
         super().save(*args, **kwargs)
 
         if is_adding:  # A new object is being created
-            # Create the MetricStatistics associated if it doesn't exist and predict values if applicable.
-            MetricStatistics.objects.update_or_create(
-                time=self.time,
-                metric=self.metric,
-                defaults={'total_cells': models.F('total_cells') + 1}
-            )
+            self.time_dimension.increase_total_cells()
             if self.metric.is_predictable:
                 # If the Metric is being created, we need to assign a predictor and refresh the prediction
                 self.refresh_prediction()
@@ -318,22 +319,34 @@ class MetricValue(H3Model, LifecycleModelMixin):
         return f"{self.metric.name} on {self.time} for {self.h3_index}: {self.value}"
 
 
-class MetricStatistics(models.Model):
+class MetricTimeDimension(models.Model, LifecycleModelMixin):
     """
-    Model to store the metric statistics  information.
-    Every time the metric values are updated, a prediction will be executed.
+    Model to store the metric time dimension related attributes.
     """
+    class MetricValueType(models.IntegerChoices):
+        """
+        Type of the metric value.
+        """
+        REANALYSIS = 1, _('Reanalysis')
+        FORECAST = 2, _('Forecast')
+
     metric = models.ForeignKey(
         Metric,
         on_delete=models.CASCADE,
-        related_name='statistics',
+        related_name='time_dimensions',
         verbose_name=_('Metric'),
-        help_text=_('The metric associated to the statistics.')
+        help_text=_('The metric associated to the time dimensions.')
     )
     time = models.DateTimeField(
         null=False, blank=False,
         verbose_name=_('Time'),
         help_text=_('The date and time of the metric values.')
+    )
+    type = models.PositiveSmallIntegerField(
+        choices=MetricValueType.choices,
+        null=False, blank=False,
+        verbose_name=_('Type'),
+        help_text=_('The type of the raw value.')
     )
     total_cells = models.IntegerField(
         null=False, blank=True, default=0,
@@ -371,8 +384,18 @@ class MetricStatistics(models.Model):
         self.save(update_fields=['total_cells_completed'])
         self.refresh_from_db(fields=['total_cells_completed'])
 
+    def increase_total_cells(self, inc_value=1):
+        """
+        Increment the total cells count.
+        """
+        self.total_cells = models.F('total_cells') + inc_value
+        self.save(update_fields=['total_cells'])
+        self.refresh_from_db(fields=['total_cells'])
+
     def save(self, *args, **kwargs):
         if self._state.adding:
+            # TODO: Also clean the time when updating
+            self.time = clean_time_field(self.time, self.metric)
             self.total_cells = self.metric.values.filter(time=self.time).count()
         super().save(*args, **kwargs)
 
@@ -382,28 +405,27 @@ class MetricStatistics(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['metric', 'time'], name='unique_metric_statistics'
+                fields=['metric', 'time'], name='unique_metric_time_dimension'
             ),
         ]
         ordering = ['metric', '-time']
         indexes = [
             models.Index(fields=['metric', 'time'])
         ]
-        verbose_name = "Metric Statistics"
-        verbose_name_plural = "Metric Statistics"
+        verbose_name = "Metric Time Dimension"
+        verbose_name_plural = "Metric Time Dimensions"
 
 
-class MetricRegionalStatistics(models.Model):
+class MetricSpatialDimension(models.Model):
     """
-    Model to store the regional statistics for a metric.
-    This is used to store the statistics for a specific region (H3 index).
+    Model to store the metric spatial dimension related attributes.
     """
     metric = models.ForeignKey(
         Metric,
         on_delete=models.CASCADE,
-        related_name='regional_statistics',
+        related_name='spatial_dimensions',
         verbose_name=_('Metric'),
-        help_text=_('The metric associated to the regional statistics.')
+        help_text=_('The metric associated to the spatial dimensions.')
     )
     h3_index = H3Field(
         null=False, blank=False,
@@ -438,10 +460,43 @@ class MetricRegionalStatistics(models.Model):
         help_text=_('The predicted daily seasonality for the metric.')
     )
 
+    def clean(self):
+        # H3 Index Validation
+        try:
+            int(self.h3_index, 16)
+        except TypeError:
+            raise ValidationError("Invalid H3 index. Needs to be hexadecimal.")
+        if not h3.is_valid_cell(self.h3_index):
+            raise ValidationError(
+                "The H3 index must be a valid H3 cell."
+            )
+        if h3.get_resolution(self.h3_index) != self.metric.h3_resolution:
+            raise ValidationError(
+                f"The H3 index ({self.h3_index}) must have the same resolution as the metric."
+            )
+
+        super().clean()
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
     class Meta:
-        unique_together = ('metric', 'h3_index')
-        verbose_name = _('MetricRegional Statistic')
-        verbose_name_plural = _('Metric Regional Statistics')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['metric', 'h3_index'],
+                name='spaial_dimension_unique_metric_h3_index'
+            ),
+            models.CheckConstraint(
+                check=H3IsValidCell(models.F('h3_index')),
+                name='spatial_dimension_h3_index_must_be_valid'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['metric', 'h3_index'])
+        ]
+        verbose_name = _('Metric Spatial Dimension')
+        verbose_name_plural = _('Metric Spatial Dimensions')
 
     def __str__(self):
-        return f"Regional Statistic for metric {self.metric.name} in H3 cell {self.h3_index}"
+        return f"Spatial Dimension for metric {self.metric.name} in H3 cell {self.h3_index}"

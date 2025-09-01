@@ -172,7 +172,6 @@ class TestMetricValue:
             h3_index=utils.h3_index_lvl8,
             time=datetime.strptime('2025-01-01T12:34:56Z', '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc),
             value=0.123,
-            type=MetricValue.MetricValueType.REANALYSIS
         )
         assert value.time == datetime.strptime('2025-01-01T12', '%Y-%m-%dT%H').replace(tzinfo=timezone.utc)
 
@@ -199,7 +198,6 @@ class TestMetricValue:
             value=0.0,
             upper_confidence_band=-1.0,
             lower_confidence_band=0.0,
-            type=MetricValue.MetricValueType.REANALYSIS
         )
         assert value.anomaly_degree == 1.0
 
@@ -227,7 +225,6 @@ class TestMetricValue:
             value=10.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
-            type=MetricValue.MetricValueType.REANALYSIS
         )
         expected = (10.0 - 8.0) / 10.0
         assert value.anomaly_degree == expected
@@ -244,7 +241,6 @@ class TestMetricValue:
             value=1.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
-            type=MetricValue.MetricValueType.REANALYSIS
         )
         expected = (1.0 - 2.0) / 1.0
         assert value.anomaly_degree == expected
@@ -261,7 +257,6 @@ class TestMetricValue:
             value=5.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
-            type=MetricValue.MetricValueType.REANALYSIS
         )
         assert value.anomaly_degree == 0.0
 
@@ -278,7 +273,6 @@ class TestMetricValue:
             predicted_value=0.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
-            type=MetricValue.MetricValueType.REANALYSIS
         )
         assert value.anomaly_degree is None
 
@@ -295,7 +289,6 @@ class TestMetricValue:
                 h3_index=utils.h3_index1,
                 time=utils.time1,
                 value=0.456,
-                type=MetricValue.MetricValueType.REANALYSIS
             )
 
     def test_create_metric_statistics(self,  metric_values):

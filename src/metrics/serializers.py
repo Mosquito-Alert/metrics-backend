@@ -1,4 +1,3 @@
-import math
 import re
 from datetime import datetime, timezone
 from dateutil import parser
@@ -65,12 +64,6 @@ class MetricValueSerializer(ModelSerializer):
             }
 
     prediction = MetricValuePredictorSerializer(source='*', read_only=True, allow_null=True)
-    type = serializers.ChoiceField(choices=[x.lower() for x in models.MetricValue.MetricValueType.names])
-
-    def to_representation(self, instance):
-        ret = super().to_representation(instance)
-        ret['type'] = [x.name.lower() for x in models.MetricValue.MetricValueType if x.value == instance.type][0]
-        return ret
 
     def get_prediction(self, obj):
         """
@@ -87,17 +80,25 @@ class MetricValueSerializer(ModelSerializer):
 
     class Meta:
         model = models.MetricValue
-        fields = ['h3_index', 'time', 'type', 'value',  'prediction']
+        fields = ['h3_index', 'time', 'value',  'prediction']
 
 
-class MetricStatisticsSerializer(ModelSerializer):
-    """
-    Serializer for the MetricStatistics model.
-    """
-    class Meta:
-        model = models.MetricStatistics
-        fields = ['time', 'prediction_progress']
-        read_only_fields = ['prediction_progress']
+# class MetricStatisticsSerializer(ModelSerializer):
+#     """
+#     Serializer for the MetricStatistics model.
+#     """
+
+#     type = serializers.ChoiceField(choices=[x.lower() for x in models.MetricStatistics.MetricValueType.names])
+
+#     def to_representation(self, instance):
+#         ret = super().to_representation(instance)
+#         ret['type'] = [x.name.lower() for x in models.MetricStatistics.MetricValueType if x.value == instance.type][0]
+#         return ret
+
+#     class Meta:
+#         model = models.MetricStatistics
+#         fields = ['time', 'prediction_progress', 'type']
+#         read_only_fields = ['prediction_progress']
 
 
 class MetricFileSerializer(Serializer):
@@ -145,11 +146,11 @@ class MetricFileSerializer(Serializer):
         # Validate that the type of the metric is one of the accepted values
         try:
             metric_type = match.group(1)
-            parsed_type = models.MetricValue.MetricValueType[metric_type.upper()].value
+            parsed_type = models.MetricTimeDimension.MetricValueType[metric_type.upper()].value
         except KeyError:
             raise ValidationError(
                 f"Invalid metric type in filename: {metric_type}. Accepted values are: "
-                f"{', '.join(models.MetricValue.MetricValueType._value2member_map_.keys())}")
+                f"{', '.join(models.MetricTimeDimension.MetricValueType._value2member_map_.keys())}")
         self.context['filename_type'] = parsed_type
 
         return file
@@ -163,36 +164,74 @@ class MetricFileSerializer(Serializer):
         type = self.context.get('filename_type')
         metric_id = self.context.get('metric_id')
 
+        # --- Prepare tracking sets ---
+        df_h3 = set()
+
+        # --- Ensure time dimension exists ---
+        time_dimension, _ = models.MetricTimeDimension.objects.get_or_create(
+            metric_id=metric_id,
+            time=time,
+            type=type,
+        )
+
+        # --- Retrieve DB spatial dimensions ---
+        spatial_dimensions = {
+            sd.h3_index: sd
+            for sd in models.MetricSpatialDimension.objects.filter(metric_id=metric_id).only("id", "h3_index")
+        }
+        if not spatial_dimensions:
+            raise ValidationError("No spatial dimensions found in DB for this metric.")
+
+        db_h3 = set(spatial_dimensions.keys())
+
+        # --- Validate CSV content and collect h3_index ---
         try:
-            df = pd.read_csv(file)
+            df = pd.read_csv(file, usecols=["h3_index", "value"])
         except Exception as e:
             raise ValidationError(f"Error reading CSV: {str(e)}")
 
-        # Validate content
         required_columns = {'h3_index', 'value'}
         if not required_columns.issubset(df.columns):
             missing = required_columns - set(df.columns)
-            raise ValidationError(f'Missing required columns: {", ".join(missing)}')
+            raise ValidationError(
+                f'Missing required columns: {", ".join(missing)}'
+            )
+
         if df.empty:
             raise ValidationError("The uploaded CSV file is empty — no rows found.")
-        metrics_to_create = []
 
-        for _, row in df.iterrows():
+        # --- Validate h3_index consistency ---
+        df_h3 = set(df["h3_index"].unique())
+        if df_h3 != db_h3:
+            missing_in_db = df_h3 - db_h3
+            extra_in_db = db_h3 - df_h3
+            raise ValidationError({
+                "missing_in_db": list(missing_in_db),
+                "extra_in_db": list(extra_in_db),
+            })
+
+        # --- Build MetricValue objects ---
+        metrics_to_create = []
+        for row in df.itertuples(index=False, name=None):
+            spatial_dimension = spatial_dimensions.get(row[0])
+            if not spatial_dimension:
+                # Should not happen, since we already validated h3_index
+                continue
             obj = models.MetricValue(
-                metric_id=metric_id,
-                h3_index=row['h3_index'],
-                time=time,
-                value=row['value'] if not math.isnan(row['value']) else None,
-                type=type
+                time_dimension=time_dimension,
+                spatial_dimension=spatial_dimension,
+                value=row[1] if pd.notna(row[1]) else None,
             )
             obj.clean()
             metrics_to_create.append(obj)
 
-        # Create the metrics without the prediction values
+        # --- Bulk insert for this chunk ---
         # TODO: If there is already a metric value created, override it if the type changes from forecast to
         # reanalysis, or it keeps being forecast --> update_fields
-        objs = models.MetricValue.objects.bulk_create(metrics_to_create, batch_size=2000)
+        models.MetricValue.objects.bulk_create(metrics_to_create, batch_size=2000)
 
-        # Perform prediction for each metric
-        [metric.refresh_prediction() for metric in objs]
-        return objs
+        # --- Refresh predictions once all metrics are created ---
+        for metric in metrics_to_create:
+            metric.refresh_prediction()
+
+        return metrics_to_create

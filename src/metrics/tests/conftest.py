@@ -66,14 +66,12 @@ def metric_values(metrics):
         h3_index=utils.h3_index1,
         time=utils.time1,
         value=0.123,
-        type=MetricValue.MetricValueType.REANALYSIS
     )
     metric_value2 = MetricValue.objects.create(
         metric=metric1,
         h3_index=utils.h3_index2,
         time=utils.time1,
         value=0.456,
-        type=MetricValue.MetricValueType.REANALYSIS,
         predicted_value=0.654,
         lower_confidence_band=0.500,
         upper_confidence_band=0.800
@@ -83,21 +81,18 @@ def metric_values(metrics):
         h3_index=utils.h3_index3,
         time=utils.time1,
         value=0.789,
-        type=MetricValue.MetricValueType.FORECAST
     )
     metric_value4 = MetricValue.objects.create(
         metric=metric1,
         h3_index=utils.h3_index1,
         time=utils.time2,
         value=0.489,
-        type=MetricValue.MetricValueType.REANALYSIS
     )
     metric_value5 = MetricValue.objects.create(
         metric=metric2,
         h3_index=utils.h3_index_lvl8,
         time=utils.time1,
         value=0.125,
-        type=MetricValue.MetricValueType.REANALYSIS
     )
     return metric_value1, metric_value2, metric_value3, metric_value4, metric_value5
 
@@ -109,10 +104,12 @@ def metric_statistics(metrics):
     metric_statistics1 = MetricStatistics.objects.create(
         metric=metric1,
         time=utils.time1,
+        type=MetricValue.MetricValueType.REANALYSIS
     )
     metric_statistics2 = MetricStatistics.objects.create(
         metric=metric2,
         time=utils.time2,
+        type=MetricValue.MetricValueType.FORECAST
     )
     return metric_statistics1, metric_statistics2
 

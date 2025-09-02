@@ -393,8 +393,7 @@ class MetricTimeDimension(models.Model, LifecycleModelMixin):
         self.refresh_from_db(fields=['total_cells'])
 
     def save(self, *args, **kwargs):
-        if self._state.adding:
-            # TODO: Also clean the time when updating
+        if self._state.adding or self.has_changed(field_name='time'):
             self.time = clean_time_field(self.time, self.metric)
             self.total_cells = self.metric.values.filter(time=self.time).count()
         super().save(*args, **kwargs)

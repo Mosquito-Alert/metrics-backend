@@ -84,6 +84,15 @@ class MetricValueSerializer(ModelSerializer):
         fields = ['h3_index', 'time', 'value',  'prediction']
 
 
+class MetricSpatialDimensionSerializer(ModelSerializer):
+    """
+    Serializer for the MetricSpatialDimension model.
+    """
+    class Meta:
+        model = models.MetricSpatialDimension
+        fields = ['h3_index', 'trend', 'yearly_seasonality', 'weekly_seasonality', 'daily_seasonality']
+
+
 class MetricTimeDimensionSerializer(ModelSerializer):
     """
     Serializer for the MetricTimeDimension model.

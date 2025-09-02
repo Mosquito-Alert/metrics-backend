@@ -9,7 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
-from src.metrics.models import Metric, MetricTimeDimension, MetricValue
+from src.metrics.models import Metric, MetricSpatialDimension, MetricTimeDimension, MetricValue
 from src.metrics import filters, serializers
 
 
@@ -88,25 +88,25 @@ class MetricValueViewSet(GenericViewSet, ListModelMixin):
         )
 
 
-# class MetricPredictorViewSet(GenericViewSet, RetrieveModelMixin):
-#     """
-#     ViewSet for MetricPredictor model.
-#     """
-#     queryset = Predictor.objects.all()
-#     serializer_class = serializers.PredictorSerializer
-#     permission_classes = [AllowAny]
-#     lookup_field = 'h3_index'  # the actual model field
-#     lookup_url_kwarg = 'h3_index'  # matches the router kwarg name
+class MetricSpatialDimensionViewSet(GenericViewSet, RetrieveModelMixin):
+    """
+    ViewSet for MetricSpatialDimension model.
+    """
+    queryset = MetricSpatialDimension.objects.all()
+    serializer_class = serializers.MetricSpatialDimensionSerializer
+    permission_classes = [AllowAny]
+    lookup_field = 'h3_index'  # the actual model field
+    lookup_url_kwarg = 'h3_index'  # matches the router kwarg name
 
-#     def get_object(self):
-#         queryset = self.get_queryset()
+    def get_object(self):
+        queryset = self.get_queryset()
 
-#         metric_id = self.kwargs['metric_id']
-#         h3_index = self.kwargs['h3_index']
+        metric_id = self.kwargs['metric_id']
+        h3_index = self.kwargs['h3_index']
 
-#         obj = queryset.get(metric_id=metric_id, h3_index=h3_index)
-#         self.check_object_permissions(self.request, obj)
-#         return obj
+        obj = queryset.get(metric_id=metric_id, h3_index=h3_index)
+        self.check_object_permissions(self.request, obj)
+        return obj
 
 
 class MetricTimeDimensionViewSet(GenericViewSet, ListModelMixin):

@@ -23,10 +23,14 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('name', models.CharField(help_text='The name of the metric.', max_length=255, unique=True, verbose_name='Name')),
-                ('code', models.SlugField(help_text='The code of the metric, used for identification purposes. Example: bites.', max_length=32, unique=True, verbose_name='Code')),
-                ('time_dimension_step', models.PositiveSmallIntegerField(blank=True, choices=[(1, 'Daily'), (2, 'Hourly')], default=1, help_text='The time dimension step for the metric. Minutes are the smallest unit.', verbose_name='Time Dimension Step')),
-                ('is_predictable', models.BooleanField(help_text='Whether the metric is predictable or not. If true, the metric will have a predictor associated to it, and the values will be predicted.', verbose_name='Is Predictable')),
-                ('h3_resolution', models.PositiveSmallIntegerField(default=6, help_text='The H3 resolution of the metric. This is used to determine the H3 index of the metric.', validators=[django.core.validators.MinValueValidator(0), django.core.validators.MaxValueValidator(15)], verbose_name='H3 Resolution')),
+                ('code', models.SlugField(help_text='The code of the metric, used for identification purposes. Example: bites.',
+                 max_length=32, unique=True, verbose_name='Code')),
+                ('time_dimension_step', models.PositiveSmallIntegerField(blank=True, choices=[
+                 (1, 'Daily'), (2, 'Hourly')], default=1, help_text='The time dimension step for the metric. Minutes are the smallest unit.', verbose_name='Time Dimension Step')),
+                ('is_predictable', models.BooleanField(
+                    help_text='Whether the metric is predictable or not. If true, the metric will have a predictor associated to it, and the values will be predicted.', verbose_name='Is Predictable')),
+                ('h3_resolution', models.PositiveSmallIntegerField(default=6, help_text='The H3 resolution of the metric. This is used to determine the H3 index of the metric.',
+                 validators=[django.core.validators.MinValueValidator(0), django.core.validators.MaxValueValidator(15)], verbose_name='H3 Resolution')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
             ],
@@ -40,12 +44,18 @@ class Migration(migrations.Migration):
             name='MetricSpatialDimension',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('h3_index', src.utils.database_features.H3Field(help_text='The H3 index of the region.', verbose_name='H3 Index')),
-                ('trend', django.contrib.postgres.fields.ArrayField(base_field=src.utils.database_features.RealField(), blank=True, help_text='The predicted trend for the metric.', null=True, size=None, verbose_name='Trend')),
-                ('yearly_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.database_features.RealField(), blank=True, help_text='The predicted yearly seasonality for the metric.', null=True, size=365, verbose_name='Yearly Seasonality')),
-                ('weekly_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.database_features.RealField(), blank=True, help_text='The predicted weekly seasonality for the metric.', null=True, size=7, verbose_name='Weekly Seasonality')),
-                ('daily_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.database_features.RealField(), blank=True, help_text='The predicted daily seasonality for the metric.', null=True, size=24, verbose_name='Daily Seasonality')),
-                ('metric', models.ForeignKey(help_text='The metric associated to the spatial dimensions.', on_delete=django.db.models.deletion.CASCADE, related_name='spatial_dimensions', to='metrics.metric', verbose_name='Metric')),
+                ('h3_index', src.utils.database_features.H3Field(
+                    help_text='The H3 index of the region.', verbose_name='H3 Index')),
+                ('trend', django.contrib.postgres.fields.ArrayField(base_field=src.utils.database_features.RealField(),
+                 blank=True, help_text='The predicted trend for the metric.', null=True, size=None, verbose_name='Trend')),
+                ('yearly_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.database_features.RealField(
+                ), blank=True, help_text='The predicted yearly seasonality for the metric.', null=True, size=365, verbose_name='Yearly Seasonality')),
+                ('weekly_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.database_features.RealField(
+                ), blank=True, help_text='The predicted weekly seasonality for the metric.', null=True, size=7, verbose_name='Weekly Seasonality')),
+                ('daily_seasonality', django.contrib.postgres.fields.ArrayField(base_field=src.utils.database_features.RealField(
+                ), blank=True, help_text='The predicted daily seasonality for the metric.', null=True, size=24, verbose_name='Daily Seasonality')),
+                ('metric', models.ForeignKey(help_text='The metric associated to the spatial dimensions.',
+                 on_delete=django.db.models.deletion.CASCADE, related_name='spatial_dimensions', to='metrics.metric', verbose_name='Metric')),
             ],
             options={
                 'verbose_name': 'Metric Spatial Dimension',
@@ -58,11 +68,16 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('time', models.DateTimeField(help_text='The date and time of the metric values.', verbose_name='Time')),
-                ('type', models.PositiveSmallIntegerField(choices=[(1, 'Reanalysis'), (2, 'Forecast')], help_text='The type of the raw value.', verbose_name='Type')),
-                ('total_cells', models.IntegerField(blank=True, default=0, help_text='The total number of cells.', verbose_name='Total Cells')),
-                ('total_cells_completed', models.IntegerField(blank=True, help_text='The total number of cells processed with a prediction.', null=True, verbose_name='Total Cells Completed')),
-                ('prediction_progress', models.GeneratedField(db_persist=True, expression=models.Case(models.When(then=models.Value(None), total_cells_completed__isnull=True), default=django.db.models.expressions.CombinedExpression(django.db.models.expressions.CombinedExpression(models.F('total_cells_completed'), '*', models.Value(1.0)), '/', models.F('total_cells'))), help_text='The percentage of cells completed with a prediction.', null=True, output_field=src.utils.database_features.RealField(), validators=[django.core.validators.MinValueValidator(0), django.core.validators.MaxValueValidator(1)], verbose_name='Prediction Progress')),
-                ('metric', models.ForeignKey(help_text='The metric associated to the time dimensions.', on_delete=django.db.models.deletion.CASCADE, related_name='time_dimensions', to='metrics.metric', verbose_name='Metric')),
+                ('type', models.PositiveSmallIntegerField(choices=[
+                 (1, 'Reanalysis'), (2, 'Forecast')], help_text='The type of the raw value.', verbose_name='Type')),
+                ('total_cells', models.IntegerField(blank=True, default=0,
+                 help_text='The total number of cells.', verbose_name='Total Cells')),
+                ('total_cells_predicted', models.IntegerField(
+                    blank=True, help_text='The total number of cells processed with a prediction.', null=True, verbose_name='Total Cells Completed')),
+                ('prediction_progress', models.GeneratedField(db_persist=True, expression=models.Case(models.When(then=models.Value(None), total_cells_predicted__isnull=True), default=django.db.models.expressions.CombinedExpression(django.db.models.expressions.CombinedExpression(models.F('total_cells_predicted'), '*', models.Value(1.0)),
+                 '/', models.F('total_cells'))), help_text='The percentage of cells completed with a prediction.', null=True, output_field=src.utils.database_features.RealField(), validators=[django.core.validators.MinValueValidator(0), django.core.validators.MaxValueValidator(1)], verbose_name='Prediction Progress')),
+                ('metric', models.ForeignKey(help_text='The metric associated to the time dimensions.',
+                 on_delete=django.db.models.deletion.CASCADE, related_name='time_dimensions', to='metrics.metric', verbose_name='Metric')),
             ],
             options={
                 'verbose_name': 'Metric Time Dimension',
@@ -74,17 +89,28 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='MetricValue',
             fields=[
-                ('pk', models.CompositePrimaryKey('metric', 'h3_index', 'time', blank=True, editable=False, help_text='The primary key of the metric value, composed by the metric, h3 index and time.', primary_key=True, serialize=False, verbose_name='Primary Key')),
-                ('h3_index', src.utils.database_features.H3Field(blank=True, help_text='The H3 index of the metric value boundary, used for spatial queries. This is stored as a bigInt to avoid issues with large indices, so it should be converted to/from hex strings if necessary.', verbose_name='H3 Index')),
-                ('time', models.DateTimeField(blank=True, help_text='The time in which the raw value was recorded. Maximum precision is one minute.', verbose_name='Time')),
-                ('value', src.utils.database_features.RealField(blank=True, help_text='The actual value of the raw data.', null=True, verbose_name='Value')),
-                ('predicted_value', src.utils.database_features.RealField(blank=True, help_text='The predicted value.', null=True, verbose_name='Value')),
-                ('lower_confidence_band', src.utils.database_features.RealField(blank=True, help_text='The lower confidence band of the predicted value.', null=True, verbose_name='Lower Confidence Band')),
-                ('upper_confidence_band', src.utils.database_features.RealField(blank=True, help_text='The upper confidence band of the predicted value.', null=True, verbose_name='Upper Confidence Band')),
-                ('anomaly_degree', src.utils.database_features.RealField(blank=True, help_text='The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that there is no anomaly. This value will be estimated at creation.', null=True, verbose_name='Anomaly Degree')),
-                ('metric', models.ForeignKey(blank=True, help_text='The metric associated to the value.', on_delete=django.db.models.deletion.CASCADE, related_name='values', to='metrics.metric', verbose_name='Metric')),
-                ('spatial_dimension', models.ForeignObject(from_fields=['metric', 'h3_index'], on_delete=django.db.models.deletion.CASCADE, related_name='metric_values', to='metrics.metricspatialdimension', to_fields=['metric', 'h3_index'])),
-                ('time_dimension', models.ForeignObject(from_fields=['metric', 'time'], on_delete=django.db.models.deletion.CASCADE, related_name='metric_values', to='metrics.metrictimedimension', to_fields=['metric', 'time'])),
+                ('pk', models.CompositePrimaryKey('metric', 'h3_index', 'time', blank=True, editable=False,
+                 help_text='The primary key of the metric value, composed by the metric, h3 index and time.', primary_key=True, serialize=False, verbose_name='Primary Key')),
+                ('h3_index', src.utils.database_features.H3Field(
+                    blank=True, help_text='The H3 index of the metric value boundary, used for spatial queries. This is stored as a bigInt to avoid issues with large indices, so it should be converted to/from hex strings if necessary.', verbose_name='H3 Index')),
+                ('time', models.DateTimeField(
+                    blank=True, help_text='The time in which the raw value was recorded. Maximum precision is one minute.', verbose_name='Time')),
+                ('value', src.utils.database_features.RealField(blank=True,
+                 help_text='The actual value of the raw data.', null=True, verbose_name='Value')),
+                ('predicted_value', src.utils.database_features.RealField(blank=True,
+                 help_text='The predicted value.', null=True, verbose_name='Value')),
+                ('lower_confidence_band', src.utils.database_features.RealField(
+                    blank=True, help_text='The lower confidence band of the predicted value.', null=True, verbose_name='Lower Confidence Band')),
+                ('upper_confidence_band', src.utils.database_features.RealField(
+                    blank=True, help_text='The upper confidence band of the predicted value.', null=True, verbose_name='Upper Confidence Band')),
+                ('anomaly_degree', src.utils.database_features.RealField(
+                    blank=True, help_text='The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that there is no anomaly. This value will be estimated at creation.', null=True, verbose_name='Anomaly Degree')),
+                ('metric', models.ForeignKey(blank=True, help_text='The metric associated to the value.',
+                 on_delete=django.db.models.deletion.CASCADE, related_name='values', to='metrics.metric', verbose_name='Metric')),
+                ('spatial_dimension', models.ForeignObject(from_fields=[
+                 'metric', 'h3_index'], on_delete=django.db.models.deletion.CASCADE, related_name='metric_values', to='metrics.metricspatialdimension', to_fields=['metric', 'h3_index'])),
+                ('time_dimension', models.ForeignObject(from_fields=[
+                 'metric', 'time'], on_delete=django.db.models.deletion.CASCADE, related_name='metric_values', to='metrics.metrictimedimension', to_fields=['metric', 'time'])),
             ],
             options={
                 'verbose_name': 'Metric Value',
@@ -97,11 +123,16 @@ class Migration(migrations.Migration):
             name='PredictorConfig',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('yearly_seasonality', models.BooleanField(default=True, help_text='Whether the predictor should consider yearly seasonality.', verbose_name='Yearly Seasonality')),
-                ('weekly_seasonality', models.BooleanField(default=False, help_text='Whether the predictor should consider weekly seasonality.', verbose_name='Weekly Seasonality')),
-                ('daily_seasonality', models.BooleanField(default=False, help_text='Whether the predictor should consider daily seasonality.', verbose_name='Daily Seasonality')),
-                ('growth', models.CharField(default='logistic', help_text='The growth model to use for the predictor.', max_length=32, verbose_name='Growth')),
-                ('metric', models.OneToOneField(help_text='The metric associated to the predictor configuration.', on_delete=django.db.models.deletion.CASCADE, related_name='predictor_config', to='metrics.metric', verbose_name='Metric')),
+                ('yearly_seasonality', models.BooleanField(
+                    default=True, help_text='Whether the predictor should consider yearly seasonality.', verbose_name='Yearly Seasonality')),
+                ('weekly_seasonality', models.BooleanField(default=False,
+                 help_text='Whether the predictor should consider weekly seasonality.', verbose_name='Weekly Seasonality')),
+                ('daily_seasonality', models.BooleanField(default=False,
+                 help_text='Whether the predictor should consider daily seasonality.', verbose_name='Daily Seasonality')),
+                ('growth', models.CharField(default='logistic',
+                 help_text='The growth model to use for the predictor.', max_length=32, verbose_name='Growth')),
+                ('metric', models.OneToOneField(help_text='The metric associated to the predictor configuration.',
+                 on_delete=django.db.models.deletion.CASCADE, related_name='predictor_config', to='metrics.metric', verbose_name='Metric')),
             ],
             options={
                 'verbose_name': 'Predictor Config',
@@ -114,11 +145,13 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='metricspatialdimension',
-            constraint=models.UniqueConstraint(fields=('metric', 'h3_index'), name='spaial_dimension_unique_metric_h3_index'),
+            constraint=models.UniqueConstraint(fields=('metric', 'h3_index'),
+                                               name='spaial_dimension_unique_metric_h3_index'),
         ),
         migrations.AddConstraint(
             model_name='metricspatialdimension',
-            constraint=models.CheckConstraint(condition=src.utils.database_features.H3IsValidCell(models.F('h3_index')), name='spatial_dimension_h3_index_must_be_valid'),
+            constraint=models.CheckConstraint(condition=src.utils.database_features.H3IsValidCell(
+                models.F('h3_index')), name='spatial_dimension_h3_index_must_be_valid'),
         ),
         migrations.AddIndex(
             model_name='metrictimedimension',
@@ -138,10 +171,12 @@ class Migration(migrations.Migration):
         ),
         migrations.AddConstraint(
             model_name='metricvalue',
-            constraint=models.CheckConstraint(condition=src.utils.database_features.H3IsValidCell(models.F('h3_index')), name='h3_index_must_be_valid'),
+            constraint=models.CheckConstraint(condition=src.utils.database_features.H3IsValidCell(
+                models.F('h3_index')), name='h3_index_must_be_valid'),
         ),
         migrations.AddConstraint(
             model_name='metricvalue',
-            constraint=models.CheckConstraint(condition=models.Q(('value__isnull', False), ('predicted_value__isnull', False), _connector='OR'), name='value_or_predicted_value_must_be_present'),
+            constraint=models.CheckConstraint(condition=models.Q(
+                ('value__isnull', False), ('predicted_value__isnull', False), _connector='OR'), name='value_or_predicted_value_must_be_present'),
         ),
     ]

@@ -9,7 +9,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
-from src.metrics.models import Metric, MetricValue
+from src.metrics.models import Metric, MetricTimeDimension, MetricValue
 from src.metrics import filters, serializers
 
 
@@ -109,12 +109,21 @@ class MetricValueViewSet(GenericViewSet, ListModelMixin):
 #         return obj
 
 
-# class MetricStatisticsViewSet(GenericViewSet, ListModelMixin):
-#     """
-#     ViewSet for MetricStatistics model.
-#     """
-#     queryset = MetricStatistics.objects.all()
-#     serializer_class = serializers.MetricStatisticsSerializer
-#     permission_classes = [AllowAny]
-#     filterset_class = filters.MetricStatisticsFilter
-#     lookup_url_kwarg = "id"
+class MetricTimeDimensionViewSet(GenericViewSet, ListModelMixin):
+    """
+    ViewSet for MetricTimeDimension model.
+    """
+    queryset = MetricTimeDimension.objects.all()
+    serializer_class = serializers.MetricTimeDimensionSerializer
+    permission_classes = [AllowAny]
+    filterset_class = filters.MetricTimeDimensionFilter
+
+    def get_queryset(self):
+        """
+        Override to filter by metric_id.
+        """
+        queryset = super().get_queryset()
+        metric_id = self.kwargs.get('metric_id')
+        if metric_id:
+            queryset = queryset.filter(metric_id=metric_id)
+        return queryset

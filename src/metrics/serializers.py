@@ -84,22 +84,25 @@ class MetricValueSerializer(ModelSerializer):
         fields = ['h3_index', 'time', 'value',  'prediction']
 
 
-# class MetricStatisticsSerializer(ModelSerializer):
-#     """
-#     Serializer for the MetricStatistics model.
-#     """
+class MetricTimeDimensionSerializer(ModelSerializer):
+    """
+    Serializer for the MetricTimeDimension model.
+    """
 
-#     type = serializers.ChoiceField(choices=[x.lower() for x in models.MetricStatistics.MetricValueType.names])
+    type = serializers.ChoiceField(choices=[x.lower() for x in models.MetricTimeDimension.MetricValueType.names])
 
-#     def to_representation(self, instance):
-#         ret = super().to_representation(instance)
-#         ret['type'] = [x.name.lower() for x in models.MetricStatistics.MetricValueType if x.value == instance.type][0]
-#         return ret
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret['type'] = [
+            x.name.lower()
+            for x in models.MetricTimeDimension.MetricValueType if x.value == instance.type
+        ][0]
+        return ret
 
-#     class Meta:
-#         model = models.MetricStatistics
-#         fields = ['time', 'prediction_progress', 'type']
-#         read_only_fields = ['prediction_progress']
+    class Meta:
+        model = models.MetricTimeDimension
+        fields = ['time', 'prediction_progress', 'type']
+        read_only_fields = ['prediction_progress']
 
 
 class MetricFileSerializer(Serializer):

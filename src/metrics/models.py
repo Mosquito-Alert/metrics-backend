@@ -353,15 +353,15 @@ class MetricTimeDimension(models.Model, LifecycleModelMixin):
         verbose_name=_('Total Cells'),
         help_text=_('The total number of cells.')
     )
-    total_cells_completed = models.IntegerField(
+    total_cells_predicted = models.IntegerField(
         null=True, blank=True,
         verbose_name=_('Total Cells Completed'),
         help_text=_('The total number of cells processed with a prediction.'),
     )
     prediction_progress = models.GeneratedField(
         expression=models.Case(
-            models.When(total_cells_completed__isnull=True, then=models.Value(None)),
-            default=models.F('total_cells_completed') * 1.0 / models.F('total_cells')
+            models.When(total_cells_predicted__isnull=True, then=models.Value(None)),
+            default=models.F('total_cells_predicted') * 1.0 / models.F('total_cells')
         ),
         output_field=RealField(),
         # If db_persist is set to false, then the field will not be persisted in the database
@@ -373,16 +373,16 @@ class MetricTimeDimension(models.Model, LifecycleModelMixin):
         validators=[MinValueValidator(0), MaxValueValidator(1)]
     )
 
-    def increase_total_cells_completed(self, inc_value=1):
+    def increase_total_cells_predicted(self, inc_value=1):
         """
         Increment the total finished count.
         """
-        self.total_cells_completed = models.Case(
-            models.When(total_cells_completed__isnull=True, then=models.Value(inc_value)),
-            default=models.F('total_cells_completed') + inc_value
+        self.total_cells_predicted = models.Case(
+            models.When(total_cells_predicted__isnull=True, then=models.Value(inc_value)),
+            default=models.F('total_cells_predicted') + inc_value
         )
-        self.save(update_fields=['total_cells_completed'])
-        self.refresh_from_db(fields=['total_cells_completed'])
+        self.save(update_fields=['total_cells_predicted'])
+        self.refresh_from_db(fields=['total_cells_predicted'])
 
     def increase_total_cells(self, inc_value=1):
         """

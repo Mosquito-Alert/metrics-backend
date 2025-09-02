@@ -300,7 +300,7 @@ class TestMetricTimeDimension:
         assert isinstance(time_dimension1, MetricTimeDimension)
         assert time_dimension1.metric.code == 'metric_1'
         assert time_dimension1.time == datetime.strptime('2025-01-01', '%Y-%m-%d').replace(tzinfo=timezone.utc)
-        assert time_dimension1.total_cells_completed is None
+        assert time_dimension1.total_cells_predicted is None
         assert time_dimension1.prediction_progress is None
 
     def test_metric_time_dimension_meta(self):
@@ -327,20 +327,20 @@ class TestMetricTimeDimension:
 
         assert time_dimension1.total_cells == 5
 
-    def test_increase_total_cells_completed(self, metric_time_dimensions):
+    def test_increase_total_cells_predicted(self, metric_time_dimensions):
         """
-        Test the increase of total_cells_completed when the method is invoked.
+        Test the increase of total_cells_predicted when the method is invoked.
         Also, assert that the prediction_progress is correctly updated.
         """
         time_dimension1, _, _ = metric_time_dimensions
         time_dimension1.total_cells = 3
-        time_dimension1.total_cells_completed = 0
+        time_dimension1.total_cells_predicted = 0
         time_dimension1.save()
 
-        time_dimension1.increase_total_cells_completed(inc_value=2)
+        time_dimension1.increase_total_cells_predicted(inc_value=2)
         time_dimension1.refresh_from_db()
 
-        assert time_dimension1.total_cells_completed == 2
+        assert time_dimension1.total_cells_predicted == 2
         assert round(time_dimension1.prediction_progress, 4) == 0.6667
 
     def test_metric_time_dimensions_total_cells(self, metric_values):

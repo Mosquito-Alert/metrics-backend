@@ -1,6 +1,7 @@
 import re
 from datetime import datetime, timezone
 from dateutil import parser
+from django.db import transaction
 import pandas as pd
 
 from rest_framework import serializers
@@ -159,6 +160,23 @@ class MetricFileSerializer(Serializer):
         """
         Create the metrics contained in the CSV file.
         """
+        @transaction.atomic
+        def get_or_update_time_dimension(metric_id, time, new_type):
+            obj, created = models.MetricTimeDimension.objects.get_or_create(
+                metric_id=metric_id,
+                time=time,
+                defaults={"type": new_type},
+            )
+
+            if not created:
+                # Only update if current type != new_type and the new value is reanalysis
+                if obj.type != new_type:
+                    if new_type == models.MetricTimeDimension.MetricValueType.REANALYSIS:
+                        obj.type = new_type
+                        obj.save(update_fields=["type"])
+                    # If it's "reanalysis" and new_type == "forecast", do nothing
+
+            return obj, created
         file = validated_data['file']
         time = self.context.get('filename_datetime')
         type = self.context.get('filename_type')
@@ -168,10 +186,10 @@ class MetricFileSerializer(Serializer):
         df_h3 = set()
 
         # --- Ensure time dimension exists ---
-        time_dimension, _ = models.MetricTimeDimension.objects.get_or_create(
+        time_dimension, _ = get_or_update_time_dimension(
             metric_id=metric_id,
             time=time,
-            type=type,
+            new_type=type
         )
 
         # --- Retrieve DB spatial dimensions ---
@@ -226,9 +244,13 @@ class MetricFileSerializer(Serializer):
             metrics_to_create.append(obj)
 
         # --- Bulk insert for this chunk ---
-        # TODO: If there is already a metric value created, override it if the type changes from forecast to
-        # reanalysis, or it keeps being forecast --> update_fields
-        models.MetricValue.objects.bulk_create(metrics_to_create, batch_size=2000)
+        models.MetricValue.objects.bulk_create(
+            metrics_to_create,
+            update_conflicts=True,
+            update_fields=["value"],
+            unique_fields=["metric", "h3_index", "time"],
+            batch_size=2000
+        )
 
         # --- Refresh predictions once all metrics are created ---
         for metric in metrics_to_create:

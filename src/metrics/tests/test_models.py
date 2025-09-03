@@ -81,7 +81,7 @@ class TestMetricValue:
         """
         Test the creation of a MetricValue instance.
         """
-        value1, _, _, _ = metric_values
+        value1, _, _, _, _ = metric_values
         spatial_dimension1, _, _ = metric_spatial_dimensions
         time_dimension1, _, _ = metric_time_dimensions
 
@@ -134,10 +134,10 @@ class TestMetricValue:
         """
         Test the behavior of MetricValue when is_predictable is False.
         """
-        _, _, _, value4 = metric_values
-        assert value4.metric.is_predictable is False
-        assert value4.predicted_value is None
-        assert value4.anomaly_degree is None
+        _, _, _, _, value5 = metric_values
+        assert value5.metric.is_predictable is False
+        assert value5.predicted_value is None
+        assert value5.anomaly_degree is None
 
     def test_metric_value_and_predicted_value_false(self, metric_time_dimensions, metric_spatial_dimensions):
         """
@@ -174,7 +174,7 @@ class TestMetricValue:
         """
         Test the rounding of time in MetricValue when an update is performed (model save method)
         """
-        value1, _, _, _ = metric_values
+        value1, _, _, _, _ = metric_values
         value1.time = datetime.strptime('2025-01-01T12:34:56Z', '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
         value1.save()
         assert value1.time == datetime.strptime('2025-01-01', '%Y-%m-%d').replace(tzinfo=timezone.utc)
@@ -347,7 +347,7 @@ class TestMetricTimeDimension:
         """
         Test that the total cells field is calculated correctly at creation.
         """
-        metric_value1, _, _, _ = metric_values
+        metric_value1, _, _, _, _ = metric_values
         stats = MetricTimeDimension.objects.get(
             metric=metric_value1.metric,
             time=metric_value1.time

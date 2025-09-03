@@ -121,14 +121,14 @@ def metric_values(metric_time_dimensions, metric_spatial_dimensions):
         lower_confidence_band=0.500,
         upper_confidence_band=0.800
     )
-    metric_value3 = MetricValue.objects.create(
+    metric_value4 = MetricValue.objects.create(
         time_dimension=time_dimension2,
         spatial_dimension=spatial_dimension2,
         value=0.789,
     )
-    metric_value4 = MetricValue.objects.create(
+    metric_value5 = MetricValue.objects.create(
         time_dimension=time_dimension3,
         spatial_dimension=spatial_dimension3,
         value=0.489,
     )
-    return metric_value1, metric_value2, metric_value3, metric_value4
+    return metric_value1, metric_value2, metric_value3, metric_value4, metric_value5

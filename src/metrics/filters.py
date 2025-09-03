@@ -28,8 +28,8 @@ class MetricValueFilter(BaseH3FilterSet):
     h3_index = filters.CharFilter(field_name='h3_index', lookup_expr='exact',
                                   widget=forms.TextInput, label='H3 Index', required=False)
     # TODO: Implement bbox. Return all the metrics inside it.
-    lat = filters.NumberFilter(widget=forms.NumberInput, label='Latitude', required=False)
-    long = filters.NumberFilter(widget=forms.NumberInput, label='Longitude', required=False)
+    lat = filters.NumberFilter(widget=forms.NumberInput, label='Latitude', required=False, method='noop')
+    lng = filters.NumberFilter(widget=forms.NumberInput, label='Longitude', required=False, method='noop')
     time = filters.IsoDateTimeFromToRangeFilter(
         field_name='time',
         label='Time Range',
@@ -43,17 +43,22 @@ class MetricValueFilter(BaseH3FilterSet):
         required=False,
     )
 
+    def noop(self, queryset, name, value):
+        # Do nothing here — handled in filter_queryset
+        return queryset
+
     def filter_queryset(self, queryset):
         """
         Enforce mutual exclusivity:
-        - If h3_index is provided, ignore lat/long.
-        - If lat & long are provided, convert to h3_index and filter.
+        - If h3_index is provided, ignore lat/lng.
+        - If lat & lng are provided, convert to h3_index and filter.
         """
-        h3_index = self.data.get('h3_index')
-        lat = self.data.get('lat')
-        long = self.data.get('long')
+        data = self.data.copy()  # make a mutable copy
+        h3_index = data.get('h3_index')
+        lat = data.get('lat')
+        lng = data.get('lng')
 
-        if lat is not None and long is not None:
+        if lat is not None and lng is not None:
             try:
                 # TODO: Find a better way to get metric_id
                 metric_id = self.request.parser_context['kwargs']['metric_id']
@@ -63,16 +68,19 @@ class MetricValueFilter(BaseH3FilterSet):
                 # TODO: Do it in database
                 h3_index = h3.latlng_to_cell(
                     lat=float(lat),
-                    lng=float(long),
+                    lng=float(lng),
                     res=resolution
                 )
-                self.data['h3_index'] = h3_index
-                self.data.pop('lat', None)
-                self.data.pop('long', None)
+                data['h3_index'] = h3_index
+                data.pop('lat', None)
+                data.pop('lng', None)
             except ValueError:
-                return queryset.none()  # Invalid lat/long values
+                return queryset.none()  # Invalid lat/lng values
         if h3_index is not None:
             queryset = queryset.filter(h3_index=h3_index)
+
+        # Override self.data safely
+        self.data = data
 
         return super().filter_queryset(queryset)
 

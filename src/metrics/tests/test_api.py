@@ -15,14 +15,19 @@ def get_metric_detail_url(id):
     return reverse('metrics:metrics-detail', args=[id])
 
 
-def get_metric_values_url(metric_id):
+def get_metric_values_url(id):
     """Create and return the metric values URL."""
-    return reverse('metrics:metric-values-list', args=[metric_id])
+    return reverse('metrics:metric-values-list', args=[id])
 
 
-def get_metric_time_dimensions_url(metric_id):
+def get_metric_time_dimensions_url(id):
     """Create and return the metric time dimensions URL."""
-    return reverse('metrics:metric-time-dimensions-list', args=[metric_id])
+    return reverse('metrics:metric-time-dimensions-list', args=[id])
+
+
+def get_metric_spatial_dimension_detail_url(id, h3_index):
+    """Create and return the metric spatial dimension detail URL."""
+    return reverse('metrics:metric-spatial-dimensions-detail', args=[id, h3_index])
 
 
 @pytest.mark.django_db(transaction=True)
@@ -190,6 +195,14 @@ class TestMetricValueListView:
         for res_i in res.data['results']:
             assert res_i in serialized.data
 
+    def test_retrieve_metric_value_metric_not_found(self, client):
+        """
+        Test the retrieval of a MetricValue instance that does not exist.
+        """
+        url = get_metric_values_url(999)
+        res = client.get(url)
+        assert res.status_code == status.HTTP_404_NOT_FOUND
+
     def test_retrieve_metric_value_list_number_of_queries(self, metric_values, client, connection):
         """
         Retrieve the list of MetricValue instances and check the number of queries executed.
@@ -200,8 +213,8 @@ class TestMetricValueListView:
 
         assert res.status_code == status.HTTP_200_OK
         _ = res.data['results'][0]['value']
-        # One query for results and one for the count
-        assert len(connection.queries) == 2
+        # One query for results, one for checking the existence of metric and one for the count
+        assert len(connection.queries) == 3
 
 
 @pytest.mark.django_db(transaction=True)
@@ -293,6 +306,14 @@ class TestMetricTimeDimensionListView:
         for res_i in res.data['results']:
             assert res_i in serialized.data
 
+    def test_retrieve_metric_time_dimension_metric_not_found(self, client):
+        """
+        Test the retrieval of a MetricTimeDimension instance that does not exist.
+        """
+        url = get_metric_time_dimensions_url(999)
+        res = client.get(url)
+        assert res.status_code == status.HTTP_404_NOT_FOUND
+
     def test_retrieve_metric_time_dimension_list_number_of_queries(self, metric_time_dimensions, client, connection):
         """
         Retrieve the list of MetricTimeDimension instances and check the number of queries executed.
@@ -303,5 +324,64 @@ class TestMetricTimeDimensionListView:
 
         assert res.status_code == status.HTTP_200_OK
         _ = res.data['results'][0]['time']
-        # One query for results and one for the count
+        # One query for results, one for checking the existence of metric and one for the count
+        assert len(connection.queries) == 3
+
+
+@pytest.mark.django_db(transaction=True)
+class TestMetricSpatialDimensionRetrieveView:
+    """
+    Test suite for retrieving MetricSpatialDimension instances.
+    """
+
+    def test_metric_spatial_dimension_detail_url(self, metrics, metric_spatial_dimensions):
+        """
+        Test the detail URL for a specific MetricSpatialDimension instance.
+        """
+        metric_id = metrics[0].id
+        h3_index = metric_spatial_dimensions[0].h3_index
+        url = get_metric_spatial_dimension_detail_url(metric_id, h3_index)
+        assert url == f"/api/v2/metrics/{metric_id}/spatial_dimensions/{h3_index}/"
+
+    def test_retrieve_metric_spatial_dimension_detail(self, client, metric_spatial_dimensions):
+        """
+        Test the retrieval of a specific MetricSpatialDimension instance.
+        """
+        spatial_dimension_to_test = metric_spatial_dimensions[0]
+        metric_id = spatial_dimension_to_test.metric.id
+        h3_index = spatial_dimension_to_test.h3_index
+        url = get_metric_spatial_dimension_detail_url(metric_id, h3_index)
+        res = client.get(url)
+
+        serialized = serializers.MetricSpatialDimensionSerializer(spatial_dimension_to_test)
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data == serialized.data
+
+    def test_retrieve_metric_spatial_dimension_metric_not_found(self, client):
+        """
+        Test the retrieval of a MetricSpatialDimension instance that does not exist.
+        """
+        url = get_metric_spatial_dimension_detail_url(999, 999)
+        res = client.get(url)
+        assert res.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_metric_spatial_dimension_not_found(self, client, metric_spatial_dimensions):
+        """
+        Test the retrieval of a MetricSpatialDimension instance that does not exist.
+        """
+        url = get_metric_spatial_dimension_detail_url(metric_spatial_dimensions[0].metric.id, 999)
+        res = client.get(url)
+        assert res.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_metric_spatial_dimension_number_of_queries(self, client, metric_spatial_dimensions, connection):
+        """
+        Test the number of queries executed when retrieving a MetricSpatialDimension instance.
+        """
+        url = get_metric_spatial_dimension_detail_url(
+            metric_spatial_dimensions[0].metric.id, metric_spatial_dimensions[0].h3_index)
+        res = client.get(url)
+
+        assert res.status_code == status.HTTP_200_OK
+        _ = res.data
+        # One query for results and one for checking the existence of metric
         assert len(connection.queries) == 2

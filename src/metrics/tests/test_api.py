@@ -20,6 +20,11 @@ def get_metric_values_url(metric_id):
     return reverse('metrics:metric-values-list', args=[metric_id])
 
 
+def get_metric_time_dimensions_url(metric_id):
+    """Create and return the metric time dimensions URL."""
+    return reverse('metrics:metric-time-dimensions-list', args=[metric_id])
+
+
 @pytest.mark.django_db(transaction=True)
 class TestMetricListView:
     """
@@ -194,6 +199,109 @@ class TestMetricValueListView:
         res = client.get(METRIC_VALUES_URL)
 
         assert res.status_code == status.HTTP_200_OK
-        _ = res.data['results'][1]['value']
+        _ = res.data['results'][0]['value']
+        # One query for results and one for the count
+        assert len(connection.queries) == 2
+
+
+@pytest.mark.django_db(transaction=True)
+class TestMetricTimeDimensionListView:
+    """
+    Test suite for the MetricTimeDimension list API.
+    """
+
+    def test_metric_time_dimensions_url(self, metrics):
+        """
+        Test the URL for the MetricTimeDimension list.
+        """
+        for metric in metrics:
+            url = get_metric_time_dimensions_url(metric.id)
+            assert url == f"/api/v2/metrics/{metric.id}/time_dimensions/"
+
+    def test_retrieve_metric_time_dimension_list(self, client, metric_time_dimensions):
+        """
+        Retrieve a list of MetricTimeDimension instances.
+        """
+        metric_to_test = metric_time_dimensions[0].metric.id
+        METRIC_TIME_DIMENSIONS_URL = get_metric_time_dimensions_url(metric_to_test)
+        res = client.get(METRIC_TIME_DIMENSIONS_URL)
+
+        metric_time_dimensions_from_db = models.MetricTimeDimension.objects.all()
+        serialized = serializers.MetricTimeDimensionSerializer(metric_time_dimensions_from_db, many=True)
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['count'] == 2
+        for res_i in res.data['results']:
+            assert res_i in serialized.data
+
+    def test_retrieve_metric_time_dimension_filter_by_time_range(self, metric_time_dimensions, client):
+        """
+        Retrieve a list of MetricTimeDimension instances filtered by a time range.
+        """
+        metric_to_test = metric_time_dimensions[0].metric.id
+        METRIC_TIME_DIMENSIONS_URL = get_metric_time_dimensions_url(metric_to_test)
+        time = utils.time1
+        res = client.get(METRIC_TIME_DIMENSIONS_URL, {'time_after': time, 'time_before': time})
+
+        metric_time_dimensions_from_db = models.MetricTimeDimension.objects.filter(
+            metric=metric_to_test,
+            time__range=(time, time)
+        )
+        serialized = serializers.MetricTimeDimensionSerializer(metric_time_dimensions_from_db, many=True)
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['count'] == 1
+        for res_i in res.data['results']:
+            assert res_i in serialized.data
+
+    def test_retrieve_metric_time_dimension_filter_by_type(self, metric_time_dimensions, client):
+        """
+        Retrieve a list of MetricTimeDimension instances filtered by type.
+        """
+        metric_to_test = metric_time_dimensions[0].metric.id
+        METRIC_TIME_DIMENSIONS_URL = get_metric_time_dimensions_url(metric_to_test)
+        res = client.get(METRIC_TIME_DIMENSIONS_URL, {'type': 1})
+
+        metric_time_dimensions_from_db = models.MetricTimeDimension.objects.filter(
+            metric=metric_to_test,
+            type=1
+        )
+        serialized = serializers.MetricTimeDimensionSerializer(metric_time_dimensions_from_db, many=True)
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['count'] == 1
+        for res_i in res.data['results']:
+            assert res_i in serialized.data
+
+    def test_retrieve_metric_time_dimensions_prediction_progress_gte(self, metric_time_dimensions, client):
+        """
+        Retrieve a list of MetricTimeDimension instances filtered by a certain level of prediction progress.
+        """
+        time_dimension_to_test = metric_time_dimensions[0]
+        time_dimension_to_test.total_cells = 2
+        time_dimension_to_test.total_cells_predicted = 2
+        time_dimension_to_test.save()
+
+        metric_to_test = time_dimension_to_test.metric.id
+        METRIC_TIME_DIMENSIONS_URL = get_metric_time_dimensions_url(metric_to_test)
+        res = client.get(METRIC_TIME_DIMENSIONS_URL, {'prediction_progress_gte': 0.8})
+
+        metric_time_dimensions_from_db = models.MetricTimeDimension.objects.filter(
+            metric=metric_to_test,
+            prediction_progress__gte=0.8
+        )
+        serialized = serializers.MetricTimeDimensionSerializer(metric_time_dimensions_from_db, many=True)
+        assert res.status_code == status.HTTP_200_OK
+        assert res.data['count'] == 1
+        for res_i in res.data['results']:
+            assert res_i in serialized.data
+
+    def test_retrieve_metric_time_dimension_list_number_of_queries(self, metric_time_dimensions, client, connection):
+        """
+        Retrieve the list of MetricTimeDimension instances and check the number of queries executed.
+        """
+        metric_to_test = metric_time_dimensions[0].metric.id
+        METRIC_TIME_DIMENSIONS_URL = get_metric_time_dimensions_url(metric_to_test)
+        res = client.get(METRIC_TIME_DIMENSIONS_URL)
+
+        assert res.status_code == status.HTTP_200_OK
+        _ = res.data['results'][0]['time']
         # One query for results and one for the count
         assert len(connection.queries) == 2

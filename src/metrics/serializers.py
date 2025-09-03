@@ -180,12 +180,11 @@ class MetricFileSerializer(Serializer):
             )
 
             if not created:
-                # Only update if current type != new_type and the new value is reanalysis
+                # Only update if current type != new_type and the previous value is not reanalysis
                 if obj.type != new_type:
-                    if new_type == models.MetricTimeDimension.MetricValueType.REANALYSIS:
+                    if obj.type != models.MetricTimeDimension.MetricValueType.REANALYSIS:
                         obj.type = new_type
                         obj.save(update_fields=["type"])
-                    # If it's "reanalysis" and new_type == "forecast", do nothing
 
             return obj, created
         file = validated_data['file']

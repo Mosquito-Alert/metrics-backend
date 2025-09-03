@@ -61,7 +61,7 @@ class MetricValueFilter(BaseH3FilterSet):
         if lat is not None and lng is not None:
             try:
                 # TODO: Find a better way to get metric_id
-                metric_id = self.request.parser_context['kwargs']['metric_id']
+                metric_id = self.request.parser_context['kwargs']['id']
                 resolution = models.Metric.objects.get(
                     id=metric_id
                 ).h3_resolution

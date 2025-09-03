@@ -33,8 +33,7 @@ class MetricSerializer(ModelSerializer):
     def to_representation(self, instance):
         ret = super().to_representation(instance)
         ret['time_dimension_step'] = [
-            x.name.lower()
-            for x in models.Metric.TimeDimensionStepType if x.value == instance.type
+            x.name.lower() for x in models.Metric.TimeDimensionStepType
         ][0]
         return ret
 

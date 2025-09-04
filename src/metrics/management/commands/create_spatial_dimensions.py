@@ -1,9 +1,10 @@
 
 import os
 import pandas as pd
+from tqdm import tqdm
 from django.core.management.base import BaseCommand
 
-from src.metrics.models import MetricSpatialDimension
+from src.metrics.models import Metric, MetricSpatialDimension
 
 # TODO: Another command that updates spatial dimensions
 
@@ -41,18 +42,20 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR(f'Failed to read CSV file: {e}'))
             return
 
-        n_dimensions = self.create_spatial_dimensions(metric_id, df)
+        metric = Metric.objects.get(id=metric_id)
+
+        n_dimensions = self.create_spatial_dimensions(metric, df)
         self.stdout.write(self.style.SUCCESS(f'Successfully created {n_dimensions} spatial dimensions.'))
 
-    def create_spatial_dimensions(self, metric_id, df) -> int:
+    def create_spatial_dimensions(self, metric, df) -> int:
         """
         Create spatial dimensions for a metric based on the provided DataFrame.
         """
         try:
             dimensions = []
             # The DataFrame will contain at least the following column: h3_index. Other columns will be ignored.
-            for h3_index in df["h3_index"].values:
-                dimension = MetricSpatialDimension(metric_id=metric_id, h3_index=h3_index)
+            for h3_index in tqdm(df["h3_index"].values, total=df.shape[0]):
+                dimension = MetricSpatialDimension(metric=metric, h3_index=h3_index)
                 dimension.clean()
                 dimensions.append(dimension)
         except Exception as e:

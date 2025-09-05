@@ -39,6 +39,7 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
         }
 
         def get_queryset(self):
+            # TODO: Save the metric object into context or similar
             _ = get_object_or_404(Metric.objects.all(), pk=self.kwargs.get('id'))
             return super().get_queryset()
 

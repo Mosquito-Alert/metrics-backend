@@ -385,3 +385,11 @@ class TestMetricSpatialDimensionRetrieveView:
         _ = res.data
         # One query for results and one for checking the existence of metric
         assert len(connection.queries) == 2
+
+
+@pytest.mark.django_db(transaction=True)
+class TestMetricValueBatchCreateView:
+    """
+    Test suite for creating MetricValue instances in bulk.
+    """
+    # TODO: Should I test this? Or maybe check first if the endpoint works for 3 million records?

@@ -1,4 +1,5 @@
 # myproject/filters.py
+from django.core.exceptions import BadRequest
 import django_filters as filters
 from django import forms
 from src.metrics import models
@@ -28,8 +29,8 @@ class MetricValueFilter(BaseH3FilterSet):
     h3_index = filters.CharFilter(field_name='h3_index', lookup_expr='exact',
                                   widget=forms.TextInput, label='H3 Index', required=False)
     # TODO: Implement bbox. Return all the metrics inside it.
-    lat = filters.NumberFilter(widget=forms.NumberInput, label='Latitude', required=False, method='noop')
-    lng = filters.NumberFilter(widget=forms.NumberInput, label='Longitude', required=False, method='noop')
+    lat = filters.NumberFilter(widget=forms.NumberInput, label='Latitude', required=False, method='filter_lat_lng')
+    lng = filters.NumberFilter(widget=forms.NumberInput, label='Longitude', required=False, method='filter_lat_lng')
     time = filters.IsoDateTimeFromToRangeFilter(
         field_name='time',
         label='Time Range',
@@ -43,8 +44,9 @@ class MetricValueFilter(BaseH3FilterSet):
         required=False,
     )
 
-    def noop(self, queryset, name, value):
-        # Do nothing here — handled in filter_queryset
+    def filter_lat_lng(self, queryset, name, value):
+        if value and (value < -180 or value > 180):
+            raise BadRequest(f"Invalid value for {name}: {value}. Must be between -180 and 180.")
         return queryset
 
     def filter_queryset(self, queryset):

@@ -2,12 +2,13 @@ import math
 from datetime import datetime
 from typing import Optional, TypedDict
 
-from django_lifecycle import LifecycleModelMixin
 import h3
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from django_lifecycle import BEFORE_UPDATE, LifecycleModelMixin, hook
+from django_lifecycle.conditions import WhenFieldHasChanged
 from rest_framework.fields import MaxValueValidator, MinValueValidator
 
 from src.metrics.managers import MetricValueManager
@@ -240,7 +241,9 @@ class MetricValue(models.Model, LifecycleModelMixin):
 
         return anomaly_degree
 
-    def clean(self):
+    def clean(self, metric: Optional[Metric] = None):
+        if metric is None:
+            metric = self.metric
         # Raise validationerror if time_dimension is not provided:
         try:
             self.time_dimension
@@ -250,7 +253,7 @@ class MetricValue(models.Model, LifecycleModelMixin):
             self.spatial_dimension
         except ObjectDoesNotExist:
             raise ValidationError("Spatial dimension must be provided.")
-        if self.time_dimension.metric != self.spatial_dimension.metric:
+        if self.time_dimension.metric_id != self.spatial_dimension.metric_id:
             raise ValidationError("Time and spatial dimensions must be from the same metric.")
 
         # H3 Index Validation
@@ -262,7 +265,7 @@ class MetricValue(models.Model, LifecycleModelMixin):
             raise ValidationError(
                 "The H3 index must be a valid H3 cell."
             )
-        if h3.get_resolution(self.h3_index) != self.metric.h3_resolution:
+        if h3.get_resolution(self.h3_index) != metric.h3_resolution:
             raise ValidationError(
                 f"The H3 index ({self.h3_index}) must have the same resolution as the metric."
             )
@@ -275,7 +278,7 @@ class MetricValue(models.Model, LifecycleModelMixin):
                 "Either 'value' or 'predicted_value' must be provided."
             )
         if self._state.adding or self.has_changed(field_name='time'):
-            self.time = clean_time_field(self.time, self.metric)
+            self.time = clean_time_field(self.time, metric)
 
         super().clean()
 
@@ -316,19 +319,25 @@ class MetricValue(models.Model, LifecycleModelMixin):
         verbose_name_plural = _('Metric Values')
 
     def __str__(self):
-        return f"{self.metric.name} on {self.time} for {self.h3_index}: {self.value}"
+        return f"{self.metric_id} on {self.time} for {self.h3_index}: {self.value}"
 
 
-class MetricTimeDimension(models.Model, LifecycleModelMixin):
+class MetricTimeDimension(LifecycleModelMixin, models.Model):
     """
     Model to store the metric time dimension related attributes.
     """
+
     class MetricValueType(models.IntegerChoices):
         """
         Type of the metric value.
         """
         REANALYSIS = 1, _('Reanalysis')
         FORECAST = 2, _('Forecast')
+
+    ALLOWED_TYPE_CHANGES = {
+        MetricValueType.REANALYSIS: [],
+        MetricValueType.FORECAST: [MetricValueType.REANALYSIS,]
+    }
 
     metric = models.ForeignKey(
         Metric,
@@ -392,6 +401,16 @@ class MetricTimeDimension(models.Model, LifecycleModelMixin):
         self.save(update_fields=['total_cells'])
         self.refresh_from_db(fields=['total_cells'])
 
+    @hook(BEFORE_UPDATE, condition=WhenFieldHasChanged('type', has_changed=True))
+    def _check_type_field_changes(self):
+        old_type = self.initial_value("type")
+        new_value = self.type
+        if new_value not in self.ALLOWED_TYPE_CHANGES.get(old_type, []):
+            raise ValidationError(
+                f"Invalid type change from {self.MetricValueType(old_type).label} to "
+                f"{self.MetricValueType(new_value).label}."
+            )
+
     def save(self, *args, **kwargs):
         if self._state.adding or self.has_changed(field_name='time'):
             self.time = clean_time_field(self.time, self.metric)
@@ -399,7 +418,7 @@ class MetricTimeDimension(models.Model, LifecycleModelMixin):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"Statistics for the metric {self.metric.name} at {self.time}."
+        return f"Statistics for the metric {self.metric_id} at {self.time}."
 
     class Meta:
         constraints = [
@@ -499,4 +518,4 @@ class MetricSpatialDimension(models.Model):
         verbose_name_plural = _('Metric Spatial Dimensions')
 
     def __str__(self):
-        return f"Spatial Dimension for metric {self.metric.name} in H3 cell {self.h3_index}"
+        return f"Spatial Dimension for metric {self.metric_id} in H3 cell {self.h3_index}"

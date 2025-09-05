@@ -1,7 +1,6 @@
 import re
 from datetime import datetime, timezone
 from dateutil import parser
-from django.db import transaction
 import pandas as pd
 
 from rest_framework import serializers
@@ -151,7 +150,7 @@ class MetricFileSerializer(Serializer):
         except ValueError:
             raise ValidationError(f"Invalid date in filename: {date_str}")
         # Clean the time field
-        metric_id = self.context.get('metric_id')
+        metric_id = self.context.get('id')
         metric = models.Metric.objects.get(id=metric_id)
         self.context['filename_datetime'] = clean_time_field(parsed_datetime, metric)
 
@@ -164,6 +163,7 @@ class MetricFileSerializer(Serializer):
                 f"Invalid metric type in filename: {metric_type}. Accepted values are: "
                 f"{', '.join(models.MetricTimeDimension.MetricValueType._value2member_map_.keys())}")
         self.context['filename_type'] = parsed_type
+        self.context['metric'] = metric
 
         return file
 
@@ -171,41 +171,25 @@ class MetricFileSerializer(Serializer):
         """
         Create the metrics contained in the CSV file.
         """
-        @transaction.atomic
-        def get_or_update_time_dimension(metric_id, time, new_type):
-            obj, created = models.MetricTimeDimension.objects.get_or_create(
-                metric_id=metric_id,
-                time=time,
-                defaults={"type": new_type},
-            )
-
-            if not created:
-                # Only update if current type != new_type and the previous value is not reanalysis
-                if obj.type != new_type:
-                    if obj.type != models.MetricTimeDimension.MetricValueType.REANALYSIS:
-                        obj.type = new_type
-                        obj.save(update_fields=["type"])
-
-            return obj, created
         file = validated_data['file']
         time = self.context.get('filename_datetime')
         type = self.context.get('filename_type')
-        metric_id = self.context.get('metric_id')
+        metric = self.context.get('metric')
 
         # --- Prepare tracking sets ---
         df_h3 = set()
 
         # --- Ensure time dimension exists ---
-        time_dimension, _ = get_or_update_time_dimension(
-            metric_id=metric_id,
+        time_dimension, _ = models.MetricTimeDimension.objects.update_or_create(
+            metric=metric,
             time=time,
-            new_type=type
+            defaults={'type': type}
         )
 
         # --- Retrieve DB spatial dimensions ---
         spatial_dimensions = {
             sd.h3_index: sd
-            for sd in models.MetricSpatialDimension.objects.filter(metric_id=metric_id).only("id", "h3_index")
+            for sd in models.MetricSpatialDimension.objects.filter(metric=metric).iterator(chunk_size=100000)
         }
         if not spatial_dimensions:
             raise ValidationError("No spatial dimensions found in DB for this metric.")
@@ -250,7 +234,7 @@ class MetricFileSerializer(Serializer):
                 spatial_dimension=spatial_dimension,
                 value=row[1] if pd.notna(row[1]) else None,
             )
-            obj.clean()
+            obj.clean(metric)
             metrics_to_create.append(obj)
 
         # --- Bulk insert for this chunk ---

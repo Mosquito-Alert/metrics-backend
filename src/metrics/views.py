@@ -38,10 +38,10 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
             'id': 'metric_id'
         }
 
-        def get_queryset(self):
-            # TODO: Save the metric object into context or similar
-            _ = get_object_or_404(Metric.objects.all(), pk=self.kwargs.get('id'))
-            return super().get_queryset()
+        def get_serializer_context(self):
+            context = super().get_serializer_context()
+            context['metric'] = get_object_or_404(Metric.objects.all(), pk=self.request.data.get('metric_id'))
+            return context
 
     class MetricValueViewSet(NestedMetricAttributeMixin, ListModelMixin, GenericViewSet):
         """
@@ -82,7 +82,6 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
             serializer.is_valid(raise_exception=True)
 
             created_metrics_values = serializer.save()
-            # TODO: Catch the error if intergrity error is raised (ex: metric_id does not exist)
 
             return Response(
                 {"detail": f"File processed successfully. {len(created_metrics_values)} metric values created"},

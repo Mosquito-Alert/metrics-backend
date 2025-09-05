@@ -4,7 +4,8 @@ from typing import Optional, TypedDict
 
 import h3
 from django.contrib.postgres.fields import ArrayField
-from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.core.exceptions import ObjectDoesNotExist
+from rest_framework.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django_lifecycle import BEFORE_UPDATE, LifecycleModelMixin, hook

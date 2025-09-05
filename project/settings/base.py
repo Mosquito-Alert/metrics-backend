@@ -44,6 +44,7 @@ THIRD_PARTY_APPS = [
     'rest_framework.authtoken',
     'drf_spectacular',
     'django_filters',
+    'drf_standardized_errors',
     # 'django_hosts',
     "corsheaders",
 ]
@@ -162,7 +163,7 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / '../static'
 
 
-# # For django-hsots
+# # For django-hosts
 # ROOT_HOSTCONF = 'project.hosts'
 # DEFAULT_HOST = 'api'
 
@@ -179,6 +180,7 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
     ],
+    "EXCEPTION_HANDLER": "drf_standardized_errors.handler.exception_handler"
 }
 
 # Spectacular settings

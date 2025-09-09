@@ -177,7 +177,7 @@ class MetricFileSerializer(Serializer):
         metric = self.context.get('metric')
 
         # --- Prepare tracking sets ---
-        df_h3 = set()
+        h3_set = set()
 
         # --- Ensure time dimension exists ---
         time_dimension, _ = models.MetricTimeDimension.objects.update_or_create(
@@ -213,10 +213,10 @@ class MetricFileSerializer(Serializer):
             raise ValidationError("The uploaded CSV file is empty — no rows found.")
 
         # --- Validate h3_index consistency ---
-        df_h3 = set(df["h3_index"].unique())
-        if df_h3 != db_h3:
-            missing_in_db = df_h3 - db_h3
-            extra_in_db = db_h3 - df_h3
+        h3_set = set(df["h3_index"].unique())
+        if h3_set != db_h3:
+            missing_in_db = h3_set - db_h3
+            extra_in_db = db_h3 - h3_set
             raise ValidationError({
                 "missing_in_db": list(missing_in_db),
                 "extra_in_db": list(extra_in_db),

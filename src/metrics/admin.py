@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
-from src.metrics.models import Metric,  PredictorConfig
+from src.metrics.models import Metric, MetricSpatialDimension, MetricTimeDimension,  PredictorConfig
 
 
 @admin.register(Metric)
@@ -57,29 +57,33 @@ class PredictorConfigAdmin(admin.ModelAdmin):
     )
 
 
-# @admin.register(MetricRegionalStatistics)
-# class MetricRegionalStatisticsAdmin(admin.ModelAdmin):
-#     list_display = ('metric', 'h3_index')
-#     search_fields = ('metric__name', 'h3_index')
-#     list_filter = ('metric',)
-#     fieldsets = (
-#         (_('General'), {
-#             'fields': ['metric', 'h3_index']
-#         }),
-#         (_('Predictions'), {
-#             'fields': ['yearly_seasonality', 'weekly_seasonality', 'daily_seasonality', 'trend']
-#         }),
-#     )
+@admin.register(MetricSpatialDimension)
+class MetricSpatialDimensionAdmin(admin.ModelAdmin):
+    list_display = ('metric', 'h3_index')
+    search_fields = ('metric__name', 'h3_index')
+    list_filter = ('metric',)
+    fieldsets = (
+        (_('General'), {
+            'fields': ['metric', 'h3_index']
+        }),
+        (_('Predictions'), {
+            'fields': ['yearly_seasonality', 'weekly_seasonality', 'daily_seasonality', 'trend']
+        }),
+    )
 
 
-# @admin.register(MetricStatistics)
-# class MetricStatisticsAdmin(admin.ModelAdmin):
-#     list_display = ('metric', 'time', 'prediction_progress', )
-#     search_fields = ('metric__name', 'time')
-#     list_filter = ('metric',)
-#     ordering = ['-metric', '-time']
-#     fieldsets = (
-#         (_('General'), {
-#             'fields': ['metric', 'time', 'prediction_progress']
-#         }),
-#     )
+@admin.register(MetricTimeDimension)
+class MetricTimeDimensionAdmin(admin.ModelAdmin):
+    list_display = ('metric', 'time', 'type', 'prediction_progress', )
+    search_fields = ('metric__name', 'time')
+    list_filter = ('metric', 'type')
+    ordering = ['-metric', '-time']
+    fieldsets = (
+        (_('General'), {
+            'fields': ['metric', 'time', 'type']
+        }),
+        (_('Progress'), {
+            'fields': ['prediction_progress', 'total_cells', 'total_cells_predicted']
+        }),
+    )
+    readonly_fields = ['prediction_progress']

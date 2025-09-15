@@ -246,6 +246,9 @@ class MetricFileSerializer(Serializer):
             batch_size=2000
         )
 
+        time_dimension.total_cells = len(metrics_to_create)
+        time_dimension.save()
+
         # --- Refresh predictions once all metrics are created ---
         for metric in metrics_to_create:
             metric.refresh_prediction()

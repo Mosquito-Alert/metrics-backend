@@ -179,12 +179,20 @@ class MetricFileSerializer(Serializer):
         # --- Prepare tracking sets ---
         h3_set = set()
 
+        previous_time_dimension = models.MetricTimeDimension.objects.filter(metric=metric, time=time).first()
+
         # --- Ensure time dimension exists ---
         time_dimension, _ = models.MetricTimeDimension.objects.update_or_create(
             metric=metric,
             time=time,
             defaults={'type': type}
         )
+
+        if previous_time_dimension:
+            print("Time dimension already has cells, deleting existing MetricValues for this time.")
+            models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
+            time_dimension.total_cells = 0
+            time_dimension.save()
 
         # --- Retrieve DB spatial dimensions ---
         spatial_dimensions = {
@@ -230,21 +238,26 @@ class MetricFileSerializer(Serializer):
                 # Should not happen, since we already validated h3_index
                 continue
             obj = models.MetricValue(
-                time_dimension=time_dimension,
-                spatial_dimension=spatial_dimension,
+                metric_id=metric.id,
+                time=time_dimension.time,
+                h3_index=spatial_dimension.h3_index,
                 value=row[1] if pd.notna(row[1]) else None,
             )
             obj.clean(metric)
             metrics_to_create.append(obj)
 
+        print(f"Prepared {len(metrics_to_create)} MetricValue objects for bulk creation.")
+
         # --- Bulk insert for this chunk ---
         models.MetricValue.objects.bulk_create(
             metrics_to_create,
-            update_conflicts=True,
-            update_fields=["value"],
-            unique_fields=["metric", "h3_index", "time"],
+            # update_conflicts=True,
+            # update_fields=["value"],
+            # unique_fields=["metric_id", "h3_index", "time"],
             batch_size=2000
         )
+
+        # TODO: Check if the len of the created objects is the same as the prepared ones
 
         time_dimension.total_cells = len(metrics_to_create)
         time_dimension.save()

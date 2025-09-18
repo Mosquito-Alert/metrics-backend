@@ -1,11 +1,6 @@
 services:
   db:
-    build:
-      context: .
-      dockerfile: Dockerfile.timescale
-      args:
-        - DEV=true
-    image: mosquito-alert/metrics-db
+    image: postgres:15.7
     container_name: metrics-db
     hostname: db
     ports:
@@ -15,6 +10,19 @@ services:
       - metrics-db_data_backups:/backups
     env_file:
       - ./.envs/.local/.postgres.env
+
+  olap:
+    image: clickhouse/clickhouse-server:25.6
+    container_name: metrics-olap
+    hostname: olap
+    ports:
+      - "8123:8123"
+      - "8124:9000"
+    volumes:
+      - metrics-olap_data:/var/lib/clickhouse
+      - metrics-olap_server:/var/lib/clickhouse-server
+    env_file:
+      - ./.envs/.local/.clickhouse.env
     # command: "-c log_statement=all"
 
   redis:
@@ -56,6 +64,7 @@ services:
     env_file:
       - ./.envs/.local/.django.env
       - ./.envs/.local/.postgres.env
+      - ./.envs/.local/.clickhouse.env
     healthcheck:
       test: "curl -f http://localhost:8000/ping/ || exit 1"
       interval: 30s
@@ -93,6 +102,8 @@ services:
 volumes:
   metrics-db_data:
   metrics-db_data_backups:
+  metrics-olap_data:
+  metrics-olap_server:
   metrics-redis_data:
 
 configs:

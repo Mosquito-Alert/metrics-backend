@@ -40,6 +40,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'clickhouse_backend',
     'rest_framework',
     'rest_framework.authtoken',
     'drf_spectacular',
@@ -80,14 +81,23 @@ MIDDLEWARE = [
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
 DATABASES = {
     'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'ENGINE': 'django.db.backends.postgresql',
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         'NAME': os.environ.get('POSTGRES_DB', 'metrics'),
-        'USER': os.environ.get('POSTGRES_USER'),
-        'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
+        'USER': os.environ.get('POSTGRES_USER', 'metrics_user'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'insecure_password_for_local_development'),
+    },
+    'clickhouse': {
+        'ENGINE': 'clickhouse_backend.backend',
+        'HOST': os.environ.get('CLICKHOUSE_HOST', 'localhost'),
+        'PORT': os.environ.get('CLICKHOUSE_PORT', '8124'),
+        'NAME': os.environ.get('CLICKHOUSE_DB', 'metrics'),
+        'USER': os.environ.get('CLICKHOUSE_USER', 'metrics_user'),
+        'PASSWORD': os.environ.get('CLICKHOUSE_PASSWORD', 'insecure_password_for_local_development'),
     }
 }
+DATABASE_ROUTERS = ['project.dbrouters.ClickHouseRouter']
 # https://docs.djangoproject.com/en/stable/ref/settings/#std:setting-DEFAULT_AUTO_FIELD
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

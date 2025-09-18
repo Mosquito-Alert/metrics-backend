@@ -251,9 +251,6 @@ class MetricFileSerializer(Serializer):
         # --- Bulk insert for this chunk ---
         models.MetricValue.objects.bulk_create(
             metrics_to_create,
-            # update_conflicts=True,
-            # update_fields=["value"],
-            # unique_fields=["metric_id", "h3_index", "time"],
             batch_size=2000
         )
 

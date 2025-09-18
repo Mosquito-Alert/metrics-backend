@@ -3,26 +3,10 @@ from django.core.exceptions import BadRequest
 import django_filters as filters
 from django import forms
 from src.metrics import models
-from src.utils.database_features import H3Field
 import h3
 
 
-class BaseH3FilterSet(filters.FilterSet):
-    """Base filter set with H3Field treated as CharField globally."""
-
-    class Meta:
-        filter_overrides = {
-            H3Field: {
-                'filter_class': filters.CharFilter,
-                'extra': lambda f: {
-                    'lookup_expr': 'exact',
-                    'widget': forms.TextInput,
-                },
-            }
-        }
-
-
-class MetricValueFilter(BaseH3FilterSet):
+class MetricValueFilter(filters.FilterSet):
     """
     Filter for MetricValue model.
     """
@@ -86,7 +70,7 @@ class MetricValueFilter(BaseH3FilterSet):
 
         return super().filter_queryset(queryset)
 
-    class Meta(BaseH3FilterSet.Meta):
+    class Meta:
         model = models.MetricValue
         fields = ['h3_index', 'time']
 

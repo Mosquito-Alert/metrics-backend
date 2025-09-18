@@ -13,7 +13,6 @@ from django_lifecycle.conditions import WhenFieldHasChanged
 from rest_framework.fields import MaxValueValidator, MinValueValidator
 
 from src.metrics.managers import MetricValueManager
-# from src.utils.database_features import H3Field, H3IsValidCell, RealField
 from src.utils.database_features import RealField
 from src.utils.datetime import clean_time_field
 
@@ -130,19 +129,6 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
     """
     Model to store the raw and predicted values of a metric.
     """
-    # pk = models.CompositePrimaryKey(
-    #     'metric', 'h3_index', 'time',
-    #     verbose_name=_('Primary Key'),
-    #     help_text=_('The primary key of the metric value, composed by the metric, h3 index and time.')
-    # )
-    # metric = models.ForeignKey(
-    #     Metric,
-    #     blank=True,
-    #     on_delete=models.CASCADE,
-    #     related_name='values',
-    #     verbose_name=_('Metric'),
-    #     help_text=_('The metric associated to the value.')
-    # )
     metric_id = clickhouse_models.Int64Field(
         null=False, blank=False,
         verbose_name=_('Metric ID'),
@@ -169,22 +155,6 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
         verbose_name=_('Value'),
         help_text=_('The actual value of the raw data.'),
     )
-    # time_dimension = models.ForeignObject(
-    #     'MetricTimeDimension',
-    #     blank=False,
-    #     on_delete=models.CASCADE,
-    #     from_fields=['metric', 'time'],
-    #     to_fields=['metric', 'time'],
-    #     related_name='metric_values',
-    # )
-    # spatial_dimension = models.ForeignObject(
-    #     'MetricSpatialDimension',
-    #     blank=False,
-    #     on_delete=models.CASCADE,
-    #     from_fields=['metric', 'h3_index'],
-    #     to_fields=['metric', 'h3_index'],
-    #     related_name='metric_values',
-    # )
     # Predictor fields
     # NOTE: We can't separate these fields into a different model because TimescaleDB needs a composite
     # primary key to work properly, and having a separate model would need three additional fields
@@ -302,6 +272,10 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
         if self._state.adding or self.has_changed(field_name='time'):
             self.time = clean_time_field(self.time, metric)
 
+        # The dimensions must exist
+        _ = self.spatial_dimension
+        _ = self.time_dimension
+
         super().clean()
 
     def save(self, *args, **kwargs):
@@ -311,6 +285,18 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
 
         is_adding = self._state.adding
 
+        # Check if the metric value already exists
+        if is_adding:
+            existing = MetricValue.objects.filter(
+                metric_id=self.metric_id,
+                h3_index=self.h3_index,
+                time=self.time
+            ).exists()
+            if existing:
+                raise ValidationError(
+                    f"A MetricValue for metric {self.metric_id}, H3 index {self.h3_index} "
+                    f"and time {self.time} already exists."
+                )
         super().save(*args, **kwargs)
 
         if is_adding:  # A new object is being created
@@ -325,21 +311,15 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
             order_by=['metric_id', 'h3_index', 'time'],
             partition_by=[clickhouse_models.toYYYYMM('time')],
         )
-        # constraints = [
-        #     models.UniqueConstraint(
-        #         fields=['metric', 'h3_index', 'time'], name='unique_metric'
-        #     ),
-        #     models.CheckConstraint(
-        #         check=H3IsValidCell(models.F('h3_index')),
-        #         name='h3_index_must_be_valid',
-        #     ),
-        #     models.CheckConstraint(
-        #         check=models.Q(value__isnull=False) | models.Q(predicted_value__isnull=False),
-        #         name='value_or_predicted_value_must_be_present',
-        #     )
-        # ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(value__isnull=False) | models.Q(predicted_value__isnull=False),
+                name='value_or_predicted_value_must_be_present',
+            )
+        ]
         ordering = ['metric_id', 'h3_index', '-time']
         indexes = [
+            # TODO: Tune these values
             clickhouse_models.Index(
                 fields=['time'],
                 name='time_index',
@@ -548,12 +528,8 @@ class MetricSpatialDimension(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['metric', 'h3_index'],
-                name='spaial_dimension_unique_metric_h3_index'
+                name='spatial_dimension_unique_metric_h3_index'
             ),
-            # models.CheckConstraint(
-            #     check=H3IsValidCell(models.F('h3_index')),
-            #     name='spatial_dimension_h3_index_must_be_valid'
-            # ),
         ]
         ordering = ['metric', 'h3_index']
         indexes = [

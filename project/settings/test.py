@@ -15,6 +15,11 @@ DATABASES['default']['PASSWORD'] = os.environ.get(
     'POSTGRES_PASSWORD',
     'insecure_password_for_local_development')  # noqa: F405
 
+DATABASES['clickhouse']['OPTIONS'] = {
+    "settings": {
+        "mutation_sync": 1
+    }
+}
 
 # * CORS & HOSTS
 # ------------------------------------------------------------------------------

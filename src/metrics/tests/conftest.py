@@ -104,31 +104,36 @@ def metric_values(metric_time_dimensions, metric_spatial_dimensions):
     time_dimension1, time_dimension2, time_dimension3 = metric_time_dimensions
     spatial_dimension1, spatial_dimension2, spatial_dimension3 = metric_spatial_dimensions
     metric_value1 = MetricValue.objects.create(
-        time_dimension=time_dimension1,
-        spatial_dimension=spatial_dimension1,
+        metric_id=spatial_dimension1.metric.id,
+        h3_index=spatial_dimension1.h3_index,
+        time=time_dimension1.time,
         value=0.123,
     )
     metric_value2 = MetricValue.objects.create(
-        time_dimension=time_dimension1,
-        spatial_dimension=spatial_dimension2,
+        metric_id=spatial_dimension2.metric.id,
+        h3_index=spatial_dimension2.h3_index,
+        time=time_dimension1.time,
         value=0.456,
     )
     metric_value3 = MetricValue.objects.create(
-        time_dimension=time_dimension2,
-        spatial_dimension=spatial_dimension1,
+        metric_id=spatial_dimension1.metric.id,
+        h3_index=spatial_dimension1.h3_index,
+        time=time_dimension2.time,
         value=0.789,
         predicted_value=0.654,
         lower_confidence_band=0.500,
         upper_confidence_band=0.800
     )
     metric_value4 = MetricValue.objects.create(
-        time_dimension=time_dimension2,
-        spatial_dimension=spatial_dimension2,
+        metric_id=spatial_dimension2.metric.id,
+        h3_index=spatial_dimension2.h3_index,
+        time=time_dimension2.time,
         value=0.789,
     )
     metric_value5 = MetricValue.objects.create(
-        time_dimension=time_dimension3,
-        spatial_dimension=spatial_dimension3,
+        metric_id=spatial_dimension3.metric.id,
+        h3_index=spatial_dimension3.h3_index,
+        time=time_dimension3.time,
         value=0.489,
     )
     return metric_value1, metric_value2, metric_value3, metric_value4, metric_value5

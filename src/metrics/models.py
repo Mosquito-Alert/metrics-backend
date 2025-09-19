@@ -5,7 +5,7 @@ from typing import Optional, TypedDict
 import h3
 from django.contrib.postgres.fields import ArrayField
 from rest_framework.exceptions import ValidationError
-from django.db import models
+from django.db import IntegrityError, models
 from clickhouse_backend import models as clickhouse_models
 from django.utils.translation import gettext_lazy as _
 from django_lifecycle import BEFORE_UPDATE, LifecycleModelMixin, hook
@@ -284,6 +284,14 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
         self.anomaly_degree = self.calculate_anomaly_degree()
 
         is_adding = self._state.adding
+        if not is_adding:
+            # force updates to exclude primary key fields
+            # NOTE: Clickhouse doesn't support updates on primary key fields
+            if "update_fields" not in kwargs:
+                kwargs["update_fields"] = [
+                    f.name for f in self._meta.fields
+                    if f.name not in ("time", "metric_id", "h3_index", "id")
+                ]
 
         # Check if the metric value already exists
         if is_adding:
@@ -293,7 +301,7 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
                 time=self.time
             ).exists()
             if existing:
-                raise ValidationError(
+                raise IntegrityError(
                     f"A MetricValue for metric {self.metric_id}, H3 index {self.h3_index} "
                     f"and time {self.time} already exists."
                 )

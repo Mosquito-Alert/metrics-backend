@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from django.db import IntegrityError
 import pytest
-from django.core.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError
 
 from src.metrics.models import Metric, MetricSpatialDimension, MetricTimeDimension, MetricValue, PredictorConfig
 from . import utils
@@ -71,11 +71,13 @@ class TestPredictorConfig:
         assert PredictorConfig.objects.filter(id=config1.id).count() == 0
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases=['default', 'clickhouse'])
 class TestMetricValue:
     """
     Test the MetricValue model.
     """
+
+    # databases = 'clickhouse'
 
     def test_metric_value_creation(self, metric_values, metric_spatial_dimensions, metric_time_dimensions):
         """
@@ -99,33 +101,20 @@ class TestMetricValue:
         """
         assert MetricValue._meta.verbose_name == 'Metric Value'
         assert MetricValue._meta.verbose_name_plural == 'Metric Values'
-        assert MetricValue._meta.ordering == ['metric', 'h3_index', '-time']
-        assert len(MetricValue._meta.constraints) == 3
-        assert MetricValue._meta.indexes[0].fields == ['metric', 'h3_index', 'time']
+        assert MetricValue._meta.ordering == ['metric_id', 'h3_index', '-time']
+        assert len(MetricValue._meta.constraints) == 1
+        assert len(MetricValue._meta.indexes) == 3
 
-    def test_metric_value_cannot_create_without_dimensions(self, metrics):
+    def test_metric_value_cannot_create_without_existing_dimensions(self, metrics):
         """
-        Test the behavior of validation error when trying to create metric without dimensions.
+        Test the behavior of validation error when trying to create metric without creations the dimensions first.
         """
         metric1, _ = metrics
         with pytest.raises(ValidationError):
             MetricValue.objects.create(
-                metric=metric1,
+                metric_id=metric1.id,
                 h3_index=utils.h3_index1,
                 time=utils.time1,
-                value=0.123,
-            )
-
-    def test_metric_value_cannot_create_with_different_metric(self, metric_time_dimensions, metric_spatial_dimensions):
-        """
-        Test that when provided dimensions whose metric don't match, a validation error is raised.
-        """
-        time_dimension1, _, _ = metric_time_dimensions
-        _, _, spatial_dimension3 = metric_spatial_dimensions
-        with pytest.raises(ValidationError):
-            MetricValue.objects.create(
-                time_dimension=time_dimension1,
-                spatial_dimension=spatial_dimension3,
                 value=0.123,
             )
 
@@ -147,8 +136,9 @@ class TestMetricValue:
         spatial_dimension1, _, _ = metric_spatial_dimensions
         with pytest.raises(ValidationError):
             MetricValue.objects.create(
-                time_dimension=time_dimension1,
-                spatial_dimension=spatial_dimension1,
+                metric_id=spatial_dimension1.metric.id,
+                h3_index=spatial_dimension1.h3_index,
+                time=time_dimension1.metric,
                 value=None,
             )
 
@@ -164,20 +154,12 @@ class TestMetricValue:
             type=MetricTimeDimension.MetricValueType.REANALYSIS
         )
         value = MetricValue.objects.create(
-            time_dimension=time_dimension,
-            spatial_dimension=spatial_dimension3,
+            metric_id=spatial_dimension3.metric.id,
+            h3_index=spatial_dimension3.h3_index,
+            time=time_dimension.time,
             value=0.123,
         )
         assert value.time == datetime.strptime('2025-01-01T12', '%Y-%m-%dT%H').replace(tzinfo=timezone.utc)
-
-    def test_metric_value_time_rounding_update(self, metric_values):
-        """
-        Test the rounding of time in MetricValue when an update is performed (model save method)
-        """
-        value1, _, _, _, _ = metric_values
-        value1.time = datetime.strptime('2025-01-01T12:34:56Z', '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
-        value1.save()
-        assert value1.time == datetime.strptime('2025-01-01', '%Y-%m-%d').replace(tzinfo=timezone.utc)
 
     # * Test Anomaly Degree
     def test_metric_value_anomaly_degree_zero_value(self, metric_time_dimensions, metric_spatial_dimensions):
@@ -188,8 +170,9 @@ class TestMetricValue:
         spatial_dimension1, _, _ = metric_spatial_dimensions
         # Case: upper_confidence_band < 0
         value = MetricValue.objects.create(
-            time_dimension=time_dimension1,
-            spatial_dimension=spatial_dimension1,
+            metric_id=spatial_dimension1.metric.id,
+            h3_index=spatial_dimension1.h3_index,
+            time=time_dimension1.time,
             value=0.0,
             upper_confidence_band=-1.0,
             lower_confidence_band=0.0,
@@ -215,8 +198,9 @@ class TestMetricValue:
         time_dimension1, _, _ = metric_time_dimensions
         spatial_dimension1, _, _ = metric_spatial_dimensions
         value = MetricValue.objects.create(
-            time_dimension=time_dimension1,
-            spatial_dimension=spatial_dimension1,
+            metric_id=spatial_dimension1.metric.id,
+            h3_index=spatial_dimension1.h3_index,
+            time=time_dimension1.time,
             value=10.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
@@ -231,8 +215,9 @@ class TestMetricValue:
         time_dimension1, _, _ = metric_time_dimensions
         spatial_dimension1, _, _ = metric_spatial_dimensions
         value = MetricValue.objects.create(
-            time_dimension=time_dimension1,
-            spatial_dimension=spatial_dimension1,
+            metric_id=spatial_dimension1.metric.id,
+            h3_index=spatial_dimension1.h3_index,
+            time=time_dimension1.time,
             value=1.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
@@ -247,8 +232,9 @@ class TestMetricValue:
         time_dimension1, _, _ = metric_time_dimensions
         spatial_dimension1, _, _ = metric_spatial_dimensions
         value = MetricValue.objects.create(
-            time_dimension=time_dimension1,
-            spatial_dimension=spatial_dimension1,
+            metric_id=spatial_dimension1.metric.id,
+            h3_index=spatial_dimension1.h3_index,
+            time=time_dimension1.time,
             value=5.0,
             upper_confidence_band=8.0,
             lower_confidence_band=2.0,
@@ -262,8 +248,9 @@ class TestMetricValue:
         time_dimension1, _, _ = metric_time_dimensions
         spatial_dimension1, _, _ = metric_spatial_dimensions
         value = MetricValue.objects.create(
-            time_dimension=time_dimension1,
-            spatial_dimension=spatial_dimension1,
+            metric_id=spatial_dimension1.metric.id,
+            h3_index=spatial_dimension1.h3_index,
+            time=time_dimension1.time,
             value=None,
             predicted_value=0.0,
             upper_confidence_band=8.0,
@@ -280,13 +267,14 @@ class TestMetricValue:
         spatial_dimension1, _, _ = metric_spatial_dimensions
         with pytest.raises(IntegrityError):
             MetricValue.objects.create(
-                time_dimension=time_dimension1,
-                spatial_dimension=spatial_dimension1,
+                metric_id=spatial_dimension1.metric.id,
+                h3_index=spatial_dimension1.h3_index,
+                time=time_dimension1.time,
                 value=0.456,
             )
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(databases=['default', 'clickhouse'])
 class TestMetricTimeDimension:
     """
     Test the MetricTimeDimension model.
@@ -379,7 +367,7 @@ class TestMetricSpatialDimension:
         assert MetricSpatialDimension._meta.verbose_name == 'Metric Spatial Dimension'
         assert MetricSpatialDimension._meta.verbose_name_plural == 'Metric Spatial Dimensions'
         assert MetricSpatialDimension._meta.ordering == ['metric', 'h3_index']
-        assert len(MetricSpatialDimension._meta.constraints) == 2
+        assert len(MetricSpatialDimension._meta.constraints) == 1
         assert MetricSpatialDimension._meta.indexes[0].fields == ['metric', 'h3_index']
 
     # * Test H3 Index

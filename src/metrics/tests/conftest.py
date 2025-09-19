@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.db import reset_queries, connection as db_connection
+from django.db import reset_queries, connection as db_connection, connections as db_connections
 import pytest
 
 from src.metrics.models import Metric, MetricSpatialDimension, MetricTimeDimension, MetricValue, PredictorConfig
@@ -13,6 +13,15 @@ def connection():
     # Reset queries to count the number of queries executed
     reset_queries()
     return db_connection
+
+
+@pytest.fixture
+def connections():
+    """Fixture to reset queries after each test and return the connection."""
+    settings.DEBUG = True
+    # Reset queries to count the number of queries executed
+    reset_queries()
+    return db_connections
 
 
 # TODO: Use factory_boy

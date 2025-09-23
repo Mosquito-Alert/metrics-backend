@@ -11,8 +11,9 @@ from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 from rest_framework_nested.viewsets import NestedViewSetMixin
 
-from src.metrics.models import Metric, MetricSpatialDimension, MetricTimeDimension, MetricValue
 from src.metrics import filters, serializers
+from src.metrics.models import (Metric, MetricSpatialDimension,
+                                MetricTimeDimension, MetricValue)
 
 
 class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
@@ -52,7 +53,7 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
         permission_classes = [AllowAny]
         filterset_class = filters.MetricValueFilter
 
-        @extend_schema(responses={201: OpenApiResponse(description='File processes successfully.')})
+        @extend_schema(responses={202: OpenApiResponse(description='File accepted for processing')})
         @action(
             methods=['POST'],
             detail=False,

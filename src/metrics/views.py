@@ -81,11 +81,11 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
             serializer = self.get_serializer(data=request.FILES, context={'id': id})
             serializer.is_valid(raise_exception=True)
 
-            created_metrics_values = serializer.save()
+            serializer_response = serializer.save()
 
             return Response(
-                {"detail": f"File processed successfully. {len(created_metrics_values)} metric values created"},
-                status=status.HTTP_201_CREATED
+                serializer_response,
+                status=status.HTTP_202_ACCEPTED
             )
 
     class MetricSpatialDimensionViewSet(NestedMetricAttributeMixin, RetrieveModelMixin, GenericViewSet):

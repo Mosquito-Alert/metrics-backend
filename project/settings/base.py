@@ -112,6 +112,12 @@ CACHES = {
     }
 }
 
+# * CELERY
+# ------------------------------------------------------------------------------
+CELERY_TASK_TRACK_STARTED = True
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+
 
 # * URLS
 # ------------------------------------------------------------------------------

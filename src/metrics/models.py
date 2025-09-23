@@ -244,7 +244,7 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
 
         return anomaly_degree
 
-    def clean(self, metric: Optional[Metric] = None):
+    def clean(self, metric: Optional[Metric] = None, bulk=False):
         if metric is None:
             metric = Metric.objects.get(id=self.metric_id)
 
@@ -272,9 +272,10 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
         if self._state.adding or self.has_changed(field_name='time'):
             self.time = clean_time_field(self.time, metric)
 
-        # The dimensions must exist
-        _ = self.spatial_dimension
-        _ = self.time_dimension
+        if not bulk:
+            # The dimensions must exist. At bulk creation, we assume they already exist.
+            _ = self.spatial_dimension
+            _ = self.time_dimension
 
         super().clean()
 

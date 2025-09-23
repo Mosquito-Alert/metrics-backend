@@ -10,6 +10,7 @@ services:
       - metrics-db_data_backups:/backups
     env_file:
       - ./.envs/.local/.postgres.env
+    # command: "-c log_statement=all"
 
   olap:
     image: clickhouse/clickhouse-server:25.6
@@ -23,7 +24,6 @@ services:
       - metrics-olap_server:/var/lib/clickhouse-server
     env_file:
       - ./.envs/.local/.clickhouse.env
-    # command: "-c log_statement=all"
 
   redis:
     image: redis:7.0.15
@@ -35,19 +35,6 @@ services:
       - metrics-redis_data:/data
     env_file:
       - ./.envs/.local/.django.env
-
-  broker:
-    image: rabbitmq:4.1.0-management
-    container_name: metrics-broker
-    hostname: broker
-    configs:
-      - source: plugins
-        target: /etc/rabbitmq/enabled_plugins
-    env_file:
-      - ./.envs/.local/.django.env
-    ports:
-      - "5672:5672"
-      - "15672:15672"
 
   api: &api
     build:
@@ -61,6 +48,7 @@ services:
       - "8000:8000"
     volumes:
       - .:/usr/app
+      - shared_temp:/shared_temp
     env_file:
       - ./.envs/.local/.django.env
       - ./.envs/.local/.postgres.env
@@ -73,7 +61,7 @@ services:
       start_period: 10s
     depends_on:
       - db
-      - broker
+      - redis
     command: /scripts/start
 
   worker:
@@ -91,21 +79,22 @@ services:
       - "5556:5555"
     command: /scripts/start_flower
 
-  geoserver:
-    image: docker.osgeo.org/geoserver:2.28.x
-    container_name: metrics-geoserver
-    hostname: geoserver
-    ports:
-      - "8080:8080"
+  # geoserver:
+  #   image: docker.osgeo.org/geoserver:2.28.x
+  #   container_name: metrics-geoserver
+  #   hostname: geoserver
+  #   ports:
+  #     - "8080:8080"
 
 
 volumes:
+  shared_temp:
   metrics-db_data:
   metrics-db_data_backups:
   metrics-olap_data:
   metrics-olap_server:
   metrics-redis_data:
 
-configs:
-  plugins:
-    content: "[rabbitmq_federation_management,rabbitmq_management,rabbitmq_mqtt,rabbitmq_stomp]."
+# configs:
+#   plugins:
+#     content: "[rabbitmq_federation_management,rabbitmq_management,rabbitmq_mqtt,rabbitmq_stomp]."

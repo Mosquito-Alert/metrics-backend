@@ -10,6 +10,7 @@ EXPOSE 8000
 # This will be overridden by the docker-compose.yml file
 ARG DEV=false
 ARG APP_HOME=/usr/app
+ARG SHARED_TEMP_DIR=/shared_temp
 
 RUN addgroup --system django && \
     adduser --system  --disabled-password --no-create-home --ingroup django django-user
@@ -17,6 +18,7 @@ RUN addgroup --system django && \
 COPY ./requirements.txt /tmp/requirements.txt
 COPY --chmod=+x ./scripts /scripts
 COPY --chown=django-user:django . ${APP_HOME}
+RUN mkdir -p ${SHARED_TEMP_DIR} && chmod 777 ${SHARED_TEMP_DIR}
 WORKDIR ${APP_HOME}
 
 # Install required system dependencies

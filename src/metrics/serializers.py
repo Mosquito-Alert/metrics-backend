@@ -189,4 +189,7 @@ class MetricFileSerializer(Serializer):
 
         task_res = create_metric_values.delay(file_path=file_path,
                                               time=time, type=type, metric_id=metric.id)
-        return {"status": f"Processing started in background. Task ID: {task_res.id}"}
+        return {
+            "status": "Processing started in background.",
+            "task_id": task_res.id
+        }

@@ -99,7 +99,7 @@ def create_metric_values(file_path: str, time: str, type: str, metric_id: int):
     # --- Bulk insert for this chunk ---
     models.MetricValue.objects.bulk_create(
         metrics_to_create,
-        batch_size=2000
+        batch_size=100_000
     )
 
     # TODO: Check if the len of the created objects is the same as the prepared ones

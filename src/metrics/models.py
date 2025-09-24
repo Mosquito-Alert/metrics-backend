@@ -129,6 +129,10 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
     """
     Model to store the raw and predicted values of a metric.
     """
+    # TODO: Apply compression to the table (custom migration)
+    # NOTE: Compresion ZSTD allows to reduce the storage that the MetricValue table uses.
+    # The higher the level, the better the compression, but the slower the writes.
+    # Values over 3 don't provide significant improvements in compression. Value 2 is a good compromise.
     metric_id = clickhouse_models.Int64Field(
         null=False, blank=False,
         verbose_name=_('Metric ID'),
@@ -156,31 +160,28 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
         help_text=_('The actual value of the raw data.'),
     )
     # Predictor fields
-    # NOTE: We can't separate these fields into a different model because TimescaleDB needs a composite
-    # primary key to work properly, and having a separate model would need three additional fields
-    # (metric_id, h3_index, time) to be able to link that model with the MetricValue model.
     # It is preferible then to have these fields nullable (null takes only 1 bit per nullable field).
     predicted_value = clickhouse_models.Float32Field(
         null=True, blank=True,
         verbose_name=_('Value'),
-        help_text=_('The predicted value.')
+        help_text=_('The predicted value.'),
     )
     lower_confidence_band = clickhouse_models.Float32Field(
         null=True, blank=True,
         verbose_name=_('Lower Confidence Band'),
-        help_text=_('The lower confidence band of the predicted value.')
+        help_text=_('The lower confidence band of the predicted value.'),
     )
     upper_confidence_band = clickhouse_models.Float32Field(
         null=True, blank=True,
         verbose_name=_('Upper Confidence Band'),
-        help_text=_('The upper confidence band of the predicted value.')
+        help_text=_('The upper confidence band of the predicted value.'),
     )
     anomaly_degree = clickhouse_models.Float32Field(
         null=True, blank=True,
         verbose_name=_('Anomaly Degree'),
         help_text=_('The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the '
                     'highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that '
-                    'there is no anomaly. This value will be estimated at creation.')
+                    'there is no anomaly. This value will be estimated at creation.'),
     )
 
     objects = MetricValueManager()
@@ -319,6 +320,10 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
             primary_key=['metric_id', 'h3_index', 'time'],
             order_by=['metric_id', 'h3_index', 'time'],
             partition_by=[clickhouse_models.toYYYYMM('time')],
+            index_granularity=4096,
+            # TODO: Think about add TTL in the future. Either remove data or move it to a different table.
+            # Note: For that, use a custom migration since it is not supported by django-clickhouse-backend for now:
+            # https://github.com/jayvynl/django-clickhouse-backend/issues/116
         )
         constraints = [
             models.CheckConstraint(
@@ -328,24 +333,11 @@ class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
         ]
         ordering = ['metric_id', 'h3_index', '-time']
         indexes = [
-            # TODO: Tune these values
-            clickhouse_models.Index(
-                fields=['time'],
-                name='time_index',
-                type=clickhouse_models.MinMax(),
-                granularity=4,
-            ),
-            clickhouse_models.Index(
-                fields=['metric_id'],
-                name='metric_index',
-                type=clickhouse_models.Set(1000),
-                granularity=1,
-            ),
             clickhouse_models.Index(
                 fields=['h3_index'],
                 name='h3_index_bloom_filter_index',
                 type=clickhouse_models.BloomFilter(),
-                granularity=4,
+                granularity=32,
             ),
         ]
         verbose_name = _('Metric Value')

@@ -1,6 +1,10 @@
 import os
-from celery import shared_task
+
 import pandas as pd
+import pyarrow as pa
+import rasterio
+from celery import shared_task
+from h3ronpy.pandas.raster import rasterize_cells
 from rest_framework.exceptions import ValidationError
 
 from src.metrics import models
@@ -102,7 +106,13 @@ def create_metric_values(file_path: str, time: str, type: str, metric_id: int):
         batch_size=100_000
     )
 
-    # TODO: Check if the len of the created objects is the same as the prepared ones
+    if len(metrics_to_create) != models.MetricValue.objects.filter(metric_id=metric.id, time=time).count():
+        print("Mismatch in created MetricValue objects.")
+        models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
+        time_dimension.total_cells = 0
+        time_dimension.save()
+        clean_file(file_path)
+        raise ValidationError("Error creating MetricValue objects.")
 
     time_dimension.total_cells = len(metrics_to_create)
     time_dimension.save()
@@ -114,3 +124,59 @@ def create_metric_values(file_path: str, time: str, type: str, metric_id: int):
     clean_file(file_path)
 
     print(f"MetricValues created successfully for time {time}.")
+
+    # TODO: Better to chain them when calling the first task. For that, see how to retrieve the task IDs.
+    rasterize_cells_for_time_dimension.delay(time_dimension.id)
+
+
+@shared_task
+def rasterize_cells_for_time_dimension(time_dimension_id: int):
+    """
+    Rasterizes H3 cells for a given time (specified in the time dimension).
+    """
+    time_dimension = models.MetricTimeDimension.objects.get(id=time_dimension_id)
+
+    print("Starting rasterization for time dimension:", time_dimension.id)
+
+    metrics = models.MetricValue.objects.filter(
+        metric_id=time_dimension.metric_id,
+        time=time_dimension.time
+    ).values("h3_index", "value").iterator(10000)
+
+    df = pd.DataFrame.from_records(metrics)
+
+    # Convert h3_index from hex string to integer
+    df["h3_index"] = df["h3_index"].astype(str).apply(lambda x: int(x, 16))
+
+    if df.empty:
+        print("No MetricValues found for rasterization.")
+        return
+
+    # Convert to PyArrow arrays
+    h3_array = pa.array(df["h3_index"])
+    val_array = pa.array(df["value"].astype("int32"))
+
+    # Rasterize
+    nodata_value = -1
+    array, transform = rasterize_cells(
+        h3_array,
+        val_array,
+        size=(25000, 25000),
+        nodata_value=nodata_value
+    )
+
+    # Save to GeoTIFF
+    with rasterio.open(
+        "h3_raster.tiff",
+        "w",
+        driver="GTiff",
+        height=array.shape[0],
+        width=array.shape[1],
+        count=1,
+        dtype=array.dtype,
+        crs="EPSG:4326",
+        transform=transform
+    ) as dst:
+        dst.write(array, 1)
+
+    print(f"Rasterization complete for time dimension {time_dimension.id}.")

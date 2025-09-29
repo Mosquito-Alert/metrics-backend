@@ -21,6 +21,10 @@ pytest-django>=4.11.1,<4.12
 # Others
 geopandas>=1.0.1,<1.1
 h3>=4.3.1,<4.4
+rasterio>=1.4.3,<1.5
+pyarrow>=21.0.0,<22.0.0
+h3ronpy>=0.22.0,<0.23.0
+shapely>=2.1.2,<2.2
 prophet>=1.1.6,<1.2
 celery>=5.5.2,<5.6
 flower>=2.0.1,<2.1

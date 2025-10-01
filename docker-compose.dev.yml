@@ -36,6 +36,19 @@ services:
     env_file:
       - ./.envs/.local/.django.env
 
+  storage:
+    image: minio/minio:latest
+    container_name: storage
+    hostname: storage
+    command: server /data --console-address ":9001"
+    ports:
+      - "9010:9000" # S3 API
+      - "9011:9001" # Web console
+    env_file:
+      - ./.envs/.local/.minio.env
+    volumes:
+      - minio_data:/data
+
   api: &api
     build:
       context: .
@@ -79,13 +92,6 @@ services:
       - "5556:5555"
     command: /scripts/start_flower
 
-  # geoserver:
-  #   image: docker.osgeo.org/geoserver:2.28.x
-  #   container_name: metrics-geoserver
-  #   hostname: geoserver
-  #   ports:
-  #     - "8080:8080"
-
 
 volumes:
   shared_temp:
@@ -94,7 +100,5 @@ volumes:
   metrics-olap_data:
   metrics-olap_server:
   metrics-redis_data:
+  minio_data:
 
-# configs:
-#   plugins:
-#     content: "[rabbitmq_federation_management,rabbitmq_management,rabbitmq_mqtt,rabbitmq_stomp]."

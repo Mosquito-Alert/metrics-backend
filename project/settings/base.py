@@ -113,6 +113,15 @@ CACHES = {
     }
 }
 
+
+# * STORAGE
+# ------------------------------------------------------------------------------
+S3_ENDPOINT_URL = os.getenv('MINIO_ENDPOINT_URL', 'http://localhost:9010')
+S3_ACCESS_KEY = os.getenv('MINIO_ROOT_USER', 'metrics_user')
+S3_SECRET_KEY = os.getenv('MINIO_ROOT_PASSWORD', 'insecure_password_for_local_development')
+S3_BUCKET_NAME = os.getenv('MINIO_BUCKET_NAME', 'metricvalues')
+
+
 # * CELERY
 # ------------------------------------------------------------------------------
 CELERY_TASK_TRACK_STARTED = True

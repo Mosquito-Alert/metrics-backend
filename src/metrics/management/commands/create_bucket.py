@@ -1,7 +1,6 @@
-from django.core.management.base import BaseCommand
-
+import boto3
 from django.conf import settings
-from project.s3 import s3_client
+from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
@@ -17,6 +16,12 @@ class Command(BaseCommand):
         """
         self.stdout.write("Creating storage bucket for metric values...")
 
+        s3_client = boto3.client(
+            's3',
+            endpoint_url=settings.S3_ENDPOINT_LOCAL_URL,
+            aws_access_key_id=settings.S3_ACCESS_KEY,
+            aws_secret_access_key=settings.S3_SECRET_KEY
+        )
         bucket_name = settings.S3_BUCKET_NAME
 
         try:

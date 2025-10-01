@@ -4,9 +4,11 @@ import pandas as pd
 import pyarrow as pa
 import rasterio
 from celery import shared_task
+from django.conf import settings
 from h3ronpy.pandas.raster import rasterize_cells
 from rest_framework.exceptions import ValidationError
 
+from project.s3 import s3_client
 from src.metrics import models
 
 
@@ -29,7 +31,7 @@ def create_metric_values(file_path: str, time: str, type: str, metric_id: int):
 
     previous_time_dimension = models.MetricTimeDimension.objects.filter(metric=metric, time=time).first()
 
-    # --- Ensure time dimension exists ---
+    # --- Ensure time dimension exists - --
     time_dimension, _ = models.MetricTimeDimension.objects.update_or_create(
         metric=metric,
         time=time,
@@ -161,13 +163,15 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     array, transform = rasterize_cells(
         h3_array,
         val_array,
-        size=(25000, 25000),
+        size=(10000, 10000),
         nodata_value=nodata_value
     )
 
-    # Save to GeoTIFF
+    # Save to GeoTIFF and upload to S3
+    temp_dir = os.environ.get('SHARED_TEMP_DIR', "/tmp")
+    temp_tiff_path = f"{temp_dir}/{time_dimension.id}_raster.tiff"
     with rasterio.open(
-        "h3_raster.tiff",
+        temp_tiff_path,
         "w",
         driver="GTiff",
         height=array.shape[0],
@@ -178,5 +182,22 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         transform=transform
     ) as dst:
         dst.write(array, 1)
+
+    # Time format to YYYY-MM-DDTHH:MM
+    time = time_dimension.time.strftime("%Y-%m-%dT%H:%M")
+
+    s3_key = f"rasters/{time_dimension.metric_id}/{time}.tiff"
+    try:
+        s3_client.upload_file(
+            temp_tiff_path,
+            settings.S3_BUCKET_NAME,
+            s3_key
+        )
+        print(f"Raster uploaded to S3 at {s3_key}.")
+    except Exception as e:
+        print(f"Failed to upload raster to S3: {e}")
+    finally:
+        if os.path.exists(temp_tiff_path):
+            os.remove(temp_tiff_path)
 
     print(f"Rasterization complete for time dimension {time_dimension.id}.")

@@ -1,5 +1,6 @@
 import os
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import rasterio
@@ -8,8 +9,9 @@ from django.conf import settings
 from h3ronpy.pandas.raster import rasterize_cells
 from rest_framework.exceptions import ValidationError
 
-from project.s3 import s3_client
+from project.s3 import s3_upload_folder
 from src.metrics import models
+from src.utils.gdal import generate_tiles
 
 
 def clean_file(file_path: str):
@@ -167,9 +169,23 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         nodata_value=nodata_value
     )
 
+    # Convert to 8-bit
+    valid_mask = array != nodata_value
+    if np.any(valid_mask):
+        vmin, vmax = np.percentile(array[valid_mask], [1, 99])  # ignore outliers
+        scaled = np.clip((array - vmin) / (vmax - vmin) * 255, 0, 255)
+        array = scaled.astype(np.uint8)
+    else:
+        array = np.full_like(array, fill_value=0, dtype=np.uint8)
+
+    # Time format to YYYY-MM-DDTHH:MM
+    time = time_dimension.time.strftime("%Y-%m-%dT%H:%M")
+
     # Save to GeoTIFF and upload to S3
     temp_dir = os.environ.get('SHARED_TEMP_DIR', "/tmp")
     temp_tiff_path = f"{temp_dir}/{time_dimension.id}_raster.tiff"
+    temp_tiles_dir = f"{temp_dir}/{time_dimension.id}_tiles"
+
     with rasterio.open(
         temp_tiff_path,
         "w",
@@ -177,27 +193,42 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         height=array.shape[0],
         width=array.shape[1],
         count=1,
-        dtype=array.dtype,
+        dtype='uint8',
         crs="EPSG:4326",
         transform=transform
     ) as dst:
         dst.write(array, 1)
 
-    # Time format to YYYY-MM-DDTHH:MM
-    time = time_dimension.time.strftime("%Y-%m-%dT%H:%M")
-
-    s3_key = f"rasters/{time_dimension.metric_id}/{time}.tiff"
-    try:
-        s3_client.upload_file(
-            temp_tiff_path,
-            settings.S3_BUCKET_NAME,
-            s3_key
-        )
-        print(f"Raster uploaded to S3 at {s3_key}.")
-    except Exception as e:
-        print(f"Failed to upload raster to S3: {e}")
-    finally:
-        if os.path.exists(temp_tiff_path):
-            os.remove(temp_tiff_path)
-
     print(f"Rasterization complete for time dimension {time_dimension.id}.")
+
+    generate_tiles_for_raster.delay(temp_tiff_path, temp_tiles_dir, time)
+
+
+@shared_task
+def generate_tiles_for_raster(raster_file: str, path: str, time: str):
+    """
+    Generate and upload tiles for a given raster file.
+    """
+    print("Starting tile generation for raster file:", raster_file)
+
+    generate_tiles(
+        input_tif=raster_file,
+        output_dir=path,
+        min_zoom=0,
+        max_zoom=6,
+        resampling="average"
+    )
+
+    s3_upload_folder(settings.S3_BUCKET_NAME, path, time)
+
+    # Clean files
+    clean_file(raster_file)
+    if os.path.exists(path):
+        for root, dirs, files in os.walk(path, topdown=False):
+            for name in files:
+                os.remove(os.path.join(root, name))
+            for name in dirs:
+                os.rmdir(os.path.join(root, name))
+        os.rmdir(path)
+
+    print(f"Tiles generated and uploaded to S3 for time {time}.")

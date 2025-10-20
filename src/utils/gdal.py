@@ -10,6 +10,8 @@ def generate_tiles(input_tif, output_dir, min_zoom=0, max_zoom=14, resampling="a
 
     cmd = [
         "gdal2tiles.py",
+        "--xyz",
+        "--processes", "4",  # Number of parallel processes
         "-z", f"{min_zoom}-{max_zoom}",
         "-r", resampling,
         "-w", "none",  # no HTML viewer

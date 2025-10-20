@@ -1,5 +1,6 @@
 import os
 
+import h3
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -40,94 +41,94 @@ def create_metric_values(file_path: str, time: str, type: str, metric_id: int):
         defaults={'type': type}
     )
 
-    if previous_time_dimension:
-        print("Time dimension already has cells, deleting existing MetricValues for this time.")
-        models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
-        time_dimension.total_cells = 0
-        time_dimension.save()
+    # if previous_time_dimension:
+    #     print("Time dimension already has cells, deleting existing MetricValues for this time.")
+    #     models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
+    #     time_dimension.total_cells = 0
+    #     time_dimension.save()
 
-    # --- Retrieve DB spatial dimensions ---
-    spatial_dimensions = {
-        sd.h3_index: sd
-        for sd in models.MetricSpatialDimension.objects.filter(metric=metric).iterator(chunk_size=100000)
-    }
-    if not spatial_dimensions:
-        raise ValidationError("No spatial dimensions found in DB for this metric.")
+    # # --- Retrieve DB spatial dimensions ---
+    # spatial_dimensions = {
+    #     sd.h3_index: sd
+    #     for sd in models.MetricSpatialDimension.objects.filter(metric=metric).iterator(chunk_size=100000)
+    # }
+    # if not spatial_dimensions:
+    #     raise ValidationError("No spatial dimensions found in DB for this metric.")
 
-    db_h3 = set(spatial_dimensions.keys())
+    # db_h3 = set(spatial_dimensions.keys())
 
-    # --- Validate CSV content and collect h3_index ---
-    try:
-        df = pd.read_csv(file_path, usecols=["h3_index", "value"])
-    except Exception as e:
-        clean_file(file_path)
-        raise ValidationError(f"Error reading CSV: {str(e)}")
+    # # --- Validate CSV content and collect h3_index ---
+    # try:
+    #     df = pd.read_csv(file_path, usecols=["h3_index", "value"])
+    # except Exception as e:
+    #     clean_file(file_path)
+    #     raise ValidationError(f"Error reading CSV: {str(e)}")
 
-    required_columns = {'h3_index', 'value'}
-    if not required_columns.issubset(df.columns):
-        missing = required_columns - set(df.columns)
-        clean_file(file_path)
-        raise ValidationError(
-            f'Missing required columns: {", ".join(missing)}'
-        )
+    # required_columns = {'h3_index', 'value'}
+    # if not required_columns.issubset(df.columns):
+    #     missing = required_columns - set(df.columns)
+    #     clean_file(file_path)
+    #     raise ValidationError(
+    #         f'Missing required columns: {", ".join(missing)}'
+    #     )
 
-    if df.empty:
-        clean_file(file_path)
-        raise ValidationError("The uploaded CSV file is empty — no rows found.")
+    # if df.empty:
+    #     clean_file(file_path)
+    #     raise ValidationError("The uploaded CSV file is empty — no rows found.")
 
-    # --- Validate h3_index consistency ---
-    h3_set = set(df["h3_index"].unique())
-    if h3_set != db_h3:
-        missing_in_db = h3_set - db_h3
-        extra_in_db = db_h3 - h3_set
-        clean_file(file_path)
-        raise ValidationError({
-            "missing_in_db": list(missing_in_db),
-            "extra_in_db": list(extra_in_db),
-        })
+    # # --- Validate h3_index consistency ---
+    # h3_set = set(df["h3_index"].unique())
+    # if h3_set != db_h3:
+    #     missing_in_db = h3_set - db_h3
+    #     extra_in_db = db_h3 - h3_set
+    #     clean_file(file_path)
+    #     raise ValidationError({
+    #         "missing_in_db": list(missing_in_db),
+    #         "extra_in_db": list(extra_in_db),
+    #     })
 
-    # --- Build MetricValue objects ---
-    metrics_to_create = []
-    for row in df.itertuples(index=False, name=None):
-        spatial_dimension = spatial_dimensions.get(row[0])
-        if not spatial_dimension:
-            # Should not happen, since we already validated h3_index
-            continue
-        obj = models.MetricValue(
-            metric_id=metric.id,
-            time=time_dimension.time,
-            h3_index=spatial_dimension.h3_index,
-            value=row[1] if pd.notna(row[1]) else None,
-        )
-        obj.clean(metric, bulk=True)
-        metrics_to_create.append(obj)
+    # # --- Build MetricValue objects ---
+    # metrics_to_create = []
+    # for row in df.itertuples(index=False, name=None):
+    #     spatial_dimension = spatial_dimensions.get(row[0])
+    #     if not spatial_dimension:
+    #         # Should not happen, since we already validated h3_index
+    #         continue
+    #     obj = models.MetricValue(
+    #         metric_id=metric.id,
+    #         time=time_dimension.time,
+    #         h3_index=spatial_dimension.h3_index,
+    #         value=row[1] if pd.notna(row[1]) else None,
+    #     )
+    #     obj.clean(metric, bulk=True)
+    #     metrics_to_create.append(obj)
 
-    print(f"Prepared {len(metrics_to_create)} MetricValue objects for bulk creation, for {time}.")
+    # print(f"Prepared {len(metrics_to_create)} MetricValue objects for bulk creation, for {time}.")
 
-    # --- Bulk insert for this chunk ---
-    models.MetricValue.objects.bulk_create(
-        metrics_to_create,
-        batch_size=100_000
-    )
+    # # --- Bulk insert for this chunk ---
+    # models.MetricValue.objects.bulk_create(
+    #     metrics_to_create,
+    #     batch_size=100_000
+    # )
 
-    if len(metrics_to_create) != models.MetricValue.objects.filter(metric_id=metric.id, time=time).count():
-        print("Mismatch in created MetricValue objects.")
-        models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
-        time_dimension.total_cells = 0
-        time_dimension.save()
-        clean_file(file_path)
-        raise ValidationError("Error creating MetricValue objects.")
+    # if len(metrics_to_create) != models.MetricValue.objects.filter(metric_id=metric.id, time=time).count():
+    #     print("Mismatch in created MetricValue objects.")
+    #     models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
+    #     time_dimension.total_cells = 0
+    #     time_dimension.save()
+    #     clean_file(file_path)
+    #     raise ValidationError("Error creating MetricValue objects.")
 
-    time_dimension.total_cells = len(metrics_to_create)
-    time_dimension.save()
+    # time_dimension.total_cells = len(metrics_to_create)
+    # time_dimension.save()
 
-    # --- Refresh predictions once all metrics are created ---
-    for metric in metrics_to_create:
-        metric.refresh_prediction()
+    # # --- Refresh predictions once all metrics are created ---
+    # for metric in metrics_to_create:
+    #     metric.refresh_prediction()
 
-    clean_file(file_path)
+    # clean_file(file_path)
 
-    print(f"MetricValues created successfully for time {time}.")
+    # print(f"MetricValues created successfully for time {time}.")
 
     # TODO: Better to chain them when calling the first task. For that, see how to retrieve the task IDs.
     rasterize_cells_for_time_dimension.delay(time_dimension.id)
@@ -149,16 +150,30 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
 
     df = pd.DataFrame.from_records(metrics)
 
-    # Convert h3_index from hex string to integer
-    df["h3_index"] = df["h3_index"].astype(str).apply(lambda x: int(x, 16))
-
     if df.empty:
         print("No MetricValues found for rasterization.")
         return
 
+    # Convert res 6 → res 5 to optimise rasterization
+    df["h3_parent"] = df["h3_index"].apply(lambda x: h3.cell_to_parent(x, 5))
+    # Aggregate by parent index (mean temperature, or any aggregation)
+    df_res5 = df.groupby("h3_parent", as_index=False)["value"].mean()
+    df_res5.reset_index(drop=True, inplace=True)
+
+    # Filter out cells crossing the antimeridian
+    df_res5["latlong"] = df_res5["h3_parent"].apply(lambda x: h3.cell_to_boundary(x))
+
+    def long_diff_exceeds_180(latlong_tuple):
+        longs = [lon for _, lon in latlong_tuple]
+        return not (max(longs) - min(longs)) > 180
+    filtered_df = df_res5[df_res5["latlong"].apply(long_diff_exceeds_180)].reset_index(drop=True)
+
+    # Convert h3_index from hex string to integer
+    filtered_df["h3_parent"] = filtered_df["h3_parent"].astype(str).apply(lambda x: int(x, 16))
+
     # Convert to PyArrow arrays
-    h3_array = pa.array(df["h3_index"])
-    val_array = pa.array(df["value"].astype("int32"))
+    h3_array = pa.array(filtered_df["h3_parent"])
+    val_array = pa.array(filtered_df["value"].round(1))
 
     # Rasterize
     nodata_value = -1
@@ -193,7 +208,6 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         height=array.shape[0],
         width=array.shape[1],
         count=1,
-        dtype='uint8',
         crs="EPSG:4326",
         transform=transform
     ) as dst:
@@ -215,7 +229,7 @@ def generate_tiles_for_raster(raster_file: str, path: str, time: str):
         input_tif=raster_file,
         output_dir=path,
         min_zoom=0,
-        max_zoom=6,
+        max_zoom=5,
         resampling="average"
     )
 

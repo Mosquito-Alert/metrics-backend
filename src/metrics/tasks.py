@@ -10,9 +10,9 @@ from django.conf import settings
 from h3ronpy.pandas.raster import rasterize_cells
 from rest_framework.exceptions import ValidationError
 
-from project.s3 import s3_upload_folder
+from project.s3 import s3_client
 from src.metrics import models
-from src.utils.gdal import generate_tiles
+from src.utils.gdal import generate_cog
 
 
 def clean_file(file_path: str):
@@ -41,94 +41,94 @@ def create_metric_values(file_path: str, time: str, type: str, metric_id: int):
         defaults={'type': type}
     )
 
-    # if previous_time_dimension:
-    #     print("Time dimension already has cells, deleting existing MetricValues for this time.")
-    #     models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
-    #     time_dimension.total_cells = 0
-    #     time_dimension.save()
+    if previous_time_dimension:
+        print("Time dimension already has cells, deleting existing MetricValues for this time.")
+        models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
+        time_dimension.total_cells = 0
+        time_dimension.save()
 
-    # # --- Retrieve DB spatial dimensions ---
-    # spatial_dimensions = {
-    #     sd.h3_index: sd
-    #     for sd in models.MetricSpatialDimension.objects.filter(metric=metric).iterator(chunk_size=100000)
-    # }
-    # if not spatial_dimensions:
-    #     raise ValidationError("No spatial dimensions found in DB for this metric.")
+    # --- Retrieve DB spatial dimensions ---
+    spatial_dimensions = {
+        sd.h3_index: sd
+        for sd in models.MetricSpatialDimension.objects.filter(metric=metric).iterator(chunk_size=100000)
+    }
+    if not spatial_dimensions:
+        raise ValidationError("No spatial dimensions found in DB for this metric.")
 
-    # db_h3 = set(spatial_dimensions.keys())
+    db_h3 = set(spatial_dimensions.keys())
 
-    # # --- Validate CSV content and collect h3_index ---
-    # try:
-    #     df = pd.read_csv(file_path, usecols=["h3_index", "value"])
-    # except Exception as e:
-    #     clean_file(file_path)
-    #     raise ValidationError(f"Error reading CSV: {str(e)}")
+    # --- Validate CSV content and collect h3_index ---
+    try:
+        df = pd.read_csv(file_path, usecols=["h3_index", "value"])
+    except Exception as e:
+        clean_file(file_path)
+        raise ValidationError(f"Error reading CSV: {str(e)}")
 
-    # required_columns = {'h3_index', 'value'}
-    # if not required_columns.issubset(df.columns):
-    #     missing = required_columns - set(df.columns)
-    #     clean_file(file_path)
-    #     raise ValidationError(
-    #         f'Missing required columns: {", ".join(missing)}'
-    #     )
+    required_columns = {'h3_index', 'value'}
+    if not required_columns.issubset(df.columns):
+        missing = required_columns - set(df.columns)
+        clean_file(file_path)
+        raise ValidationError(
+            f'Missing required columns: {", ".join(missing)}'
+        )
 
-    # if df.empty:
-    #     clean_file(file_path)
-    #     raise ValidationError("The uploaded CSV file is empty — no rows found.")
+    if df.empty:
+        clean_file(file_path)
+        raise ValidationError("The uploaded CSV file is empty — no rows found.")
 
-    # # --- Validate h3_index consistency ---
-    # h3_set = set(df["h3_index"].unique())
-    # if h3_set != db_h3:
-    #     missing_in_db = h3_set - db_h3
-    #     extra_in_db = db_h3 - h3_set
-    #     clean_file(file_path)
-    #     raise ValidationError({
-    #         "missing_in_db": list(missing_in_db),
-    #         "extra_in_db": list(extra_in_db),
-    #     })
+    # --- Validate h3_index consistency ---
+    h3_set = set(df["h3_index"].unique())
+    if h3_set != db_h3:
+        missing_in_db = h3_set - db_h3
+        extra_in_db = db_h3 - h3_set
+        clean_file(file_path)
+        raise ValidationError({
+            "missing_in_db": list(missing_in_db),
+            "extra_in_db": list(extra_in_db),
+        })
 
-    # # --- Build MetricValue objects ---
-    # metrics_to_create = []
-    # for row in df.itertuples(index=False, name=None):
-    #     spatial_dimension = spatial_dimensions.get(row[0])
-    #     if not spatial_dimension:
-    #         # Should not happen, since we already validated h3_index
-    #         continue
-    #     obj = models.MetricValue(
-    #         metric_id=metric.id,
-    #         time=time_dimension.time,
-    #         h3_index=spatial_dimension.h3_index,
-    #         value=row[1] if pd.notna(row[1]) else None,
-    #     )
-    #     obj.clean(metric, bulk=True)
-    #     metrics_to_create.append(obj)
+    # --- Build MetricValue objects ---
+    metrics_to_create = []
+    for row in df.itertuples(index=False, name=None):
+        spatial_dimension = spatial_dimensions.get(row[0])
+        if not spatial_dimension:
+            # Should not happen, since we already validated h3_index
+            continue
+        obj = models.MetricValue(
+            metric_id=metric.id,
+            time=time_dimension.time,
+            h3_index=spatial_dimension.h3_index,
+            value=row[1] if pd.notna(row[1]) else None,
+        )
+        obj.clean(metric, bulk=True)
+        metrics_to_create.append(obj)
 
-    # print(f"Prepared {len(metrics_to_create)} MetricValue objects for bulk creation, for {time}.")
+    print(f"Prepared {len(metrics_to_create)} MetricValue objects for bulk creation, for {time}.")
 
-    # # --- Bulk insert for this chunk ---
-    # models.MetricValue.objects.bulk_create(
-    #     metrics_to_create,
-    #     batch_size=100_000
-    # )
+    # --- Bulk insert for this chunk ---
+    models.MetricValue.objects.bulk_create(
+        metrics_to_create,
+        batch_size=100_000
+    )
 
-    # if len(metrics_to_create) != models.MetricValue.objects.filter(metric_id=metric.id, time=time).count():
-    #     print("Mismatch in created MetricValue objects.")
-    #     models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
-    #     time_dimension.total_cells = 0
-    #     time_dimension.save()
-    #     clean_file(file_path)
-    #     raise ValidationError("Error creating MetricValue objects.")
+    if len(metrics_to_create) != models.MetricValue.objects.filter(metric_id=metric.id, time=time).count():
+        print("Mismatch in created MetricValue objects.")
+        models.MetricValue.objects.filter(metric_id=metric.id, time=time).delete()
+        time_dimension.total_cells = 0
+        time_dimension.save()
+        clean_file(file_path)
+        raise ValidationError("Error creating MetricValue objects.")
 
-    # time_dimension.total_cells = len(metrics_to_create)
-    # time_dimension.save()
+    time_dimension.total_cells = len(metrics_to_create)
+    time_dimension.save()
 
-    # # --- Refresh predictions once all metrics are created ---
-    # for metric in metrics_to_create:
-    #     metric.refresh_prediction()
+    # --- Refresh predictions once all metrics are created ---
+    for metric in metrics_to_create:
+        metric.refresh_prediction()
 
-    # clean_file(file_path)
+    clean_file(file_path)
 
-    # print(f"MetricValues created successfully for time {time}.")
+    print(f"MetricValues created successfully for time {time}.")
 
     # TODO: Better to chain them when calling the first task. For that, see how to retrieve the task IDs.
     rasterize_cells_for_time_dimension.delay(time_dimension.id)
@@ -199,7 +199,6 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     # Save to GeoTIFF and upload to S3
     temp_dir = os.environ.get('SHARED_TEMP_DIR', "/tmp")
     temp_tiff_path = f"{temp_dir}/{time_dimension.id}_raster.tiff"
-    temp_tiles_dir = f"{temp_dir}/{time_dimension.id}_tiles"
 
     with rasterio.open(
         temp_tiff_path,
@@ -208,6 +207,7 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         height=array.shape[0],
         width=array.shape[1],
         count=1,
+        dtype=array.dtype,
         crs="EPSG:4326",
         transform=transform
     ) as dst:
@@ -215,34 +215,28 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
 
     print(f"Rasterization complete for time dimension {time_dimension.id}.")
 
-    generate_tiles_for_raster.delay(temp_tiff_path, temp_tiles_dir, time)
+    generating_cog_for_raster.delay(temp_tiff_path, time)
 
 
 @shared_task
-def generate_tiles_for_raster(raster_file: str, path: str, time: str):
+def generating_cog_for_raster(raster_file: str, time: str):
     """
-    Generate and upload tiles for a given raster file.
+    Generate COG for a given raster file.
     """
-    print("Starting tile generation for raster file:", raster_file)
+    print("Starting COG generation for raster file:", raster_file)
 
-    generate_tiles(
+    output_cog = raster_file.replace(".tiff", "_cog.tiff")
+
+    generate_cog(
         input_tif=raster_file,
-        output_dir=path,
-        min_zoom=0,
-        max_zoom=5,
-        resampling="average"
+        output_cog=output_cog
     )
 
-    s3_upload_folder(settings.S3_BUCKET_NAME, path, time)
+    key = f"raster/cog/{time}.tiff"
+    s3_client.upload_file(output_cog, settings.S3_BUCKET_NAME, key)
 
     # Clean files
     clean_file(raster_file)
-    if os.path.exists(path):
-        for root, dirs, files in os.walk(path, topdown=False):
-            for name in files:
-                os.remove(os.path.join(root, name))
-            for name in dirs:
-                os.rmdir(os.path.join(root, name))
-        os.rmdir(path)
+    clean_file(output_cog)
 
-    print(f"Tiles generated and uploaded to S3 for time {time}.")
+    print(f"COG uploaded to S3 at {key} for time {time}.")

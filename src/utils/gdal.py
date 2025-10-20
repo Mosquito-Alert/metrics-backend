@@ -19,3 +19,17 @@ def generate_tiles(input_tif, output_dir, min_zoom=0, max_zoom=14, resampling="a
         output_dir,
     ]
     subprocess.run(cmd, check=True)
+
+
+def generate_cog(input_tif, output_cog):
+    """
+    Generate a Cloud Optimized GeoTIFF (COG) from a given GeoTIFF.
+    """
+    cmd = [
+        "gdal_translate",
+        "-of", "COG",
+        "-co", "COMPRESS=LZW",
+        input_tif,
+        output_cog,
+    ]
+    subprocess.run(cmd, check=True)

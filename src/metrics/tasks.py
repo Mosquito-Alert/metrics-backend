@@ -12,7 +12,6 @@ from rest_framework.exceptions import ValidationError
 
 from project.s3 import s3_client
 from src.metrics import models
-from src.utils.gdal import generate_cog
 
 
 def clean_file(file_path: str):
@@ -203,7 +202,7 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     with rasterio.open(
         temp_tiff_path,
         "w",
-        driver="GTiff",
+        driver="COG",
         height=array.shape[0],
         width=array.shape[1],
         count=1,
@@ -213,30 +212,8 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     ) as dst:
         dst.write(array, 1)
 
+    key = f"rasters/{time}.tiff"
+    s3_client.upload_file(temp_tiff_path, settings.S3_BUCKET_NAME, key)
+    clean_file(temp_tiff_path)
+
     print(f"Rasterization complete for time dimension {time_dimension.id}.")
-
-    generating_cog_for_raster.delay(temp_tiff_path, time)
-
-
-@shared_task
-def generating_cog_for_raster(raster_file: str, time: str):
-    """
-    Generate COG for a given raster file.
-    """
-    print("Starting COG generation for raster file:", raster_file)
-
-    output_cog = raster_file.replace(".tiff", "_cog.tiff")
-
-    generate_cog(
-        input_tif=raster_file,
-        output_cog=output_cog
-    )
-
-    key = f"raster/cog/{time}.tiff"
-    s3_client.upload_file(output_cog, settings.S3_BUCKET_NAME, key)
-
-    # Clean files
-    clean_file(raster_file)
-    clean_file(output_cog)
-
-    print(f"COG uploaded to S3 at {key} for time {time}.")

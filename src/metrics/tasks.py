@@ -154,10 +154,13 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         return
 
     # Convert res 6 → res 5 to optimise rasterization
-    df["h3_parent"] = df["h3_index"].apply(lambda x: h3.cell_to_parent(x, 5))
+    # df["h3_parent"] = df["h3_index"].apply(lambda x: h3.cell_to_parent(x, 5))
     # Aggregate by parent index (mean temperature, or any aggregation)
-    df_res5 = df.groupby("h3_parent", as_index=False)["value"].mean()
-    df_res5.reset_index(drop=True, inplace=True)
+    # df_res5 = df.groupby("h3_parent", as_index=False)["value"].mean()
+    # df_res5.reset_index(drop=True, inplace=True)
+    # TODO: Fix this.
+    df["h3_parent"] = df["h3_index"]
+    df_res5 = df
 
     # Filter out cells crossing the antimeridian
     df_res5["latlong"] = df_res5["h3_parent"].apply(lambda x: h3.cell_to_boundary(x))
@@ -179,18 +182,21 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     array, transform = rasterize_cells(
         h3_array,
         val_array,
-        size=(10000, 10000),
+        size=6000,
         nodata_value=nodata_value
     )
 
-    # Convert to 8-bit
-    valid_mask = array != nodata_value
-    if np.any(valid_mask):
-        vmin, vmax = np.percentile(array[valid_mask], [1, 99])  # ignore outliers
-        scaled = np.clip((array - vmin) / (vmax - vmin) * 255, 0, 255)
-        array = scaled.astype(np.uint8)
-    else:
-        array = np.full_like(array, fill_value=0, dtype=np.uint8)
+    # DELETE: # Convert to 8-bit
+    # valid_mask = array != nodata_value
+    # if np.any(valid_mask):
+    #     vmin, vmax = np.percentile(array[valid_mask], [1, 99])  # ignore outliers
+    #     scaled = np.clip((array - vmin) / (vmax - vmin) * 255, 0, 255)
+    #     array = scaled.astype(np.uint8)
+    # else:
+    #     array = np.full_like(array, fill_value=0, dtype=np.uint8)
+
+    # Transform the val_array to float32
+    array = array.astype(np.float32)
 
     # Time format to YYYY-MM-DDTHH:MM
     time = time_dimension.time.strftime("%Y-%m-%dT%H:%M")
@@ -208,7 +214,8 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         count=1,
         dtype=array.dtype,
         crs="EPSG:4326",
-        transform=transform
+        transform=transform,
+        nodata=nodata_value
     ) as dst:
         dst.write(array, 1)
 

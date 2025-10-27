@@ -171,10 +171,11 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
 
     # Rasterize
     nodata_value = -1
+    size = 10000
     array, transform = rasterize_cells(
         h3_array,
         val_array,
-        size=(6000, 6000),
+        size=(size, size),
         nodata_value=nodata_value
     )
 
@@ -184,7 +185,7 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     # Reproject to 3857
     src_crs = "EPSG:4326"
     dst_crs = "EPSG:3857"
-    height, width = array.shape
+    height, width = size, size  # array.shape
     profile = {
         "driver": "GTiff",
         "dtype": array.dtype,
@@ -203,10 +204,11 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         source=array,
         destination=dst_array,
         src_transform=transform,
+        src_nodata=nodata_value,
         src_crs=src_crs,
         dst_transform=dst_transform,
         dst_crs=dst_crs,
-        resampling=Resampling.nearest
+        resampling=Resampling.bilinear
     )
     cog_profile = profile.copy()
     cog_profile.update({

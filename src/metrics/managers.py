@@ -2,6 +2,8 @@ from collections import defaultdict
 from django.db import transaction
 from django.db.models import Manager
 
+from src.metrics.querysets import MetricValueQuerySet
+
 
 class MetricValueManager(Manager):
     """
@@ -9,7 +11,8 @@ class MetricValueManager(Manager):
     """
 
     def get_queryset(self):
-        return super().get_queryset().filter(value__isnull=False)
+        # return super().get_queryset().filter(value__isnull=False) # CHECK:
+        return MetricValueQuerySet(self.model, using=self._db).filter(value__isnull=False)
 
     def bulk_create(self, objs, **kwargs):
         """
@@ -29,3 +32,6 @@ class MetricValueManager(Manager):
                 result.extend(super().bulk_create(grouped_values, **kwargs))
 
         return result
+
+    def filter_by_polygon(self, *args, **kwargs):
+        return self.get_queryset().filter_by_polygon(*args, **kwargs)

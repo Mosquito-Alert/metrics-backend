@@ -1,6 +1,6 @@
 
 
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action
@@ -88,6 +88,86 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
                 serializer_response,
                 status=status.HTTP_202_ACCEPTED
             )
+
+        @extend_schema(
+            request=serializers.GeoJSONModelSerializer,
+            parameters=[
+                OpenApiParameter(
+                    name='time_after',
+                    type=str,
+                    location=OpenApiParameter.QUERY,
+                    description='Start datetime (ISO8601)'
+                ),
+                OpenApiParameter(
+                    name='time_before',
+                    type=str,
+                    location=OpenApiParameter.QUERY,
+                    description='End datetime (ISO8601)'
+                ),
+            ],
+            responses={
+                200: OpenApiResponse(
+                    description="Grouped by h3_index",
+                    response={
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/MetricValueSerializer"}
+                        }
+                    },
+                    examples=[
+                        OpenApiExample(
+                            name="Grouped response example",
+                            value={
+                                "863944607ffffff": [
+                                    {
+                                        "time": "2025-09-05T00:00:00Z",
+                                        "value": 4.87,
+                                        "prediction": None
+                                    }
+                                ]
+                            },
+                            response_only=True,)
+                    ]
+                )}
+        )
+        @action(
+            methods=['POST'],
+            detail=False,
+            url_path='filter_by_geometry',
+            url_name='filter-by-geometry',
+            filterset_class=filters.MetricValueFilterByPolygon
+        )
+        def filter_by_geometry(self, request, *args, **kwargs):
+            """
+            Action that filters metric values by a given geometry (Polygon or MultiPolygon).
+            The geometry should be provided in the request body as GeoJSON format.
+            """
+            # validate that metrid_id exists
+            metric = get_object_or_404(Metric.objects.all(), pk=kwargs.get('id'))
+
+            # Use gis serializer to validate the geometry
+            req_serializer = serializers.GeoJSONModelSerializer(data=request.data)
+            req_serializer.is_valid(raise_exception=True)
+
+            geometry = req_serializer.validated_data['geometry']
+
+            qs = self.get_queryset().filter(metric_id=metric.id).filter_by_polygon(
+                geometry,
+                resolution=metric.h3_resolution
+            )
+
+            # APPLY FILTERSET MANUALLY # CHECK: There is a way of doing it without applying manually? Same with swagger
+            filterset = filters.MetricValueFilterByPolygon(
+                request.query_params,
+                queryset=qs
+            )
+            if filterset.is_valid():
+                qs = filterset.qs
+
+            # result = self.get_serializer(qs, many=True).data
+            result = serializers.MetricValueGroupedSerializer(qs).data
+            return Response(result, status=status.HTTP_200_OK)
 
     class MetricSpatialDimensionViewSet(NestedMetricAttributeMixin, RetrieveModelMixin, GenericViewSet):
         """

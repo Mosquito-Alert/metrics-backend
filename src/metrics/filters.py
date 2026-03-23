@@ -75,6 +75,21 @@ class MetricValueFilter(filters.FilterSet):
         fields = ['h3_index', 'time']
 
 
+class MetricValueFilterByPolygon(filters.FilterSet):
+    """
+    Filter for MetricValue model by polygon.
+    """
+    time = filters.IsoDateTimeFromToRangeFilter(
+        field_name='time',
+        label='Time Range',
+        required=False,
+    )
+
+    class Meta:
+        model = models.MetricValue
+        fields = ['time']
+
+
 class MetricTimeDimensionFilter(filters.FilterSet):
     """
     Filter for MetricTimeDimension model.

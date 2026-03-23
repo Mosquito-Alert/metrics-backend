@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from dateutil import parser
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
-from rest_framework.serializers import ModelSerializer, Serializer
+from rest_framework.serializers import ModelSerializer, Serializer, defaultdict
+from rest_framework_gis.fields import GeometryField
 
 from src.metrics.tasks import create_metric_values
 from src.utils.datetime import clean_time_field
@@ -44,26 +45,39 @@ class MetricSerializer(ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
 
+class GeoJSONModelSerializer(serializers.Serializer):
+    """Serializer for validating GeoJSON geometries."""
+    geometry = GeometryField()
+
+    class Meta:
+        fields = ['geometry']
+
+
+class MetricValuePredictorSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the predicted values of a MetricValue instance.
+    """
+
+    def to_representation(self, instance):
+        if self.allow_null and instance.predicted_value is None:
+            return None
+        return super().to_representation(instance)
+
+    class Meta:
+        model = models.MetricValue
+        fields = ['value', 'lower_confidence_band', 'upper_confidence_band', 'anomaly_degree']
+        extra_kwargs = {
+            'value': {'source': 'predicted_value', 'required': True, 'allow_null': False},
+            'lower_confidence_band': {'required': True, 'allow_null': True},
+            'upper_confidence_band': {'required': True, 'allow_null': True},
+            'anomaly_degree': {'required': True, 'allow_null': True}
+        }
+
+
 class MetricValueSerializer(ModelSerializer):
     """
     Serializer for the Metric Values.
     """
-    class MetricValuePredictorSerializer(serializers.ModelSerializer):
-        def to_representation(self, instance):
-            if self.allow_null and instance.predicted_value is None:
-                return None
-            return super().to_representation(instance)
-
-        class Meta:
-            model = models.MetricValue
-            fields = ['value', 'lower_confidence_band', 'upper_confidence_band', 'anomaly_degree']
-            extra_kwargs = {
-                'value': {'source': 'predicted_value', 'required': True, 'allow_null': False},
-                'lower_confidence_band': {'required': True, 'allow_null': True},
-                'upper_confidence_band': {'required': True, 'allow_null': True},
-                'anomaly_degree': {'required': True, 'allow_null': True}
-            }
-
     prediction = MetricValuePredictorSerializer(source='*', read_only=True, allow_null=True)
 
     def get_prediction(self, obj):
@@ -82,6 +96,19 @@ class MetricValueSerializer(ModelSerializer):
     class Meta:
         model = models.MetricValue
         fields = ['h3_index', 'time', 'value',  'prediction']
+
+
+class MetricValueGroupedSerializer(serializers.Serializer):
+    def to_representation(self, data):
+        grouped = defaultdict(list)
+
+        items = MetricValueSerializer(data, many=True).data
+
+        for item in items:
+            h3_index = item.pop('h3_index')
+            grouped[h3_index].append(item)
+
+        return dict(grouped)
 
 
 class MetricSpatialDimensionSerializer(ModelSerializer):

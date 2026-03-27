@@ -1,6 +1,8 @@
 
 
-from drf_spectacular.utils import OpenApiExample, OpenApiParameter, OpenApiResponse, extend_schema
+import h3
+from drf_spectacular.utils import (OpenApiParameter,
+                                   OpenApiResponse, extend_schema)
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action
@@ -14,6 +16,7 @@ from rest_framework_nested.viewsets import NestedViewSetMixin
 from src.metrics import filters, serializers
 from src.metrics.models import (Metric, MetricSpatialDimension,
                                 MetricTimeDimension, MetricValue)
+from src.utils.geo import geojson_to_h3_shape
 
 
 class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
@@ -90,6 +93,7 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
             )
 
         @extend_schema(
+            operation_id="metrics_values_aggregate_by_geometry",
             request=serializers.GeoJSONModelSerializer,
             parameters=[
                 OpenApiParameter(
@@ -108,56 +112,45 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
             responses={
                 200: OpenApiResponse(
                     description="Grouped by h3_index",
-                    response={
-                        "type": "object",
-                        "additionalProperties": {
-                            "type": "array",
-                            "items": {"$ref": "#/components/schemas/MetricValueSerializer"}
-                        }
-                    },
-                    examples=[
-                        OpenApiExample(
-                            name="Grouped response example",
-                            value={
-                                "863944607ffffff": [
-                                    {
-                                        "time": "2025-09-05T00:00:00Z",
-                                        "value": 4.87,
-                                        "prediction": None
-                                    }
-                                ]
-                            },
-                            response_only=True,)
-                    ]
+                    response=serializers.MetricValueAggregateResponseSerializer,
                 )}
         )
         @action(
             methods=['POST'],
             detail=False,
-            url_path='filter_by_geometry',
-            url_name='filter-by-geometry',
+            url_path='aggregate_by_geometry',
+            url_name='aggregate-by-geometry',
             filterset_class=filters.MetricValueFilterByPolygon
         )
-        def filter_by_geometry(self, request, *args, **kwargs):
+        def aggregate_by_geometry(self, request, *args, **kwargs):
             """
-            Action that filters metric values by a given geometry (Polygon or MultiPolygon).
+            Action that filters metric values by a given geometry (Polygon or MultiPolygon)
+            and aggregate its values by h3_index.
             The geometry should be provided in the request body as GeoJSON format.
             """
-            # validate that metrid_id exists
+            # TODO: Check permissions, maybe we don't want to allow any user to filter by geometry
+            # Validate that metric exists
             metric = get_object_or_404(Metric.objects.all(), pk=kwargs.get('id'))
 
-            # Use gis serializer to validate the geometry
+            # Validate geometry
             req_serializer = serializers.GeoJSONModelSerializer(data=request.data)
             req_serializer.is_valid(raise_exception=True)
-
             geometry = req_serializer.validated_data['geometry']
 
+            # Compute H3 indexes
+            h3_shape = geojson_to_h3_shape(geometry)
+            h3_indexes = list(h3.polygon_to_cells(h3shape=h3_shape, res=metric.h3_resolution))
+
+            # Base queryset
             qs = self.get_queryset().filter(metric_id=metric.id).filter_by_polygon(
                 geometry,
                 resolution=metric.h3_resolution
             )
 
-            # APPLY FILTERSET MANUALLY # CHECK: There is a way of doing it without applying manually? Same with swagger
+            # TODO: If req_serialzer.validate_date['time_FROM'] then qs = qs.filter(time__gte)
+            # If req_serialzer.validate_date['time_TO'] then qs = qs.filter(time__lte)
+            # TODO: Remove the following lines filterset
+            # Apply filters
             filterset = filters.MetricValueFilterByPolygon(
                 request.query_params,
                 queryset=qs
@@ -165,9 +158,19 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
             if filterset.is_valid():
                 qs = filterset.qs
 
-            # result = self.get_serializer(qs, many=True).data
-            result = serializers.MetricValueGroupedSerializer(qs).data
-            return Response(result, status=status.HTTP_200_OK)
+            # Aggregate by time
+            qs = qs.aggregate_mean_by_time()
+
+            # Wrap response
+            response_data = {
+                "h3_indexes": h3_indexes,
+                "values": qs,
+            }
+
+            # Serialize values
+            response = serializers.MetricValueAggregateResponseSerializer(response_data).data
+
+            return Response(response, status=status.HTTP_200_OK)
 
     class MetricSpatialDimensionViewSet(NestedMetricAttributeMixin, RetrieveModelMixin, GenericViewSet):
         """

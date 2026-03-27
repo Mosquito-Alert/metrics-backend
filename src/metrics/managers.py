@@ -11,8 +11,7 @@ class MetricValueManager(Manager):
     """
 
     def get_queryset(self):
-        # return super().get_queryset().filter(value__isnull=False) # CHECK:
-        return MetricValueQuerySet(self.model, using=self._db).filter(value__isnull=False)
+        return MetricValueQuerySet(model=self.model, using=self._db, hints=self._hints).filter(value__isnull=False)
 
     def bulk_create(self, objs, **kwargs):
         """

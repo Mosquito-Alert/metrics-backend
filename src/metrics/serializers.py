@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from dateutil import parser
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
-from rest_framework.serializers import ModelSerializer, Serializer, defaultdict
+from rest_framework.serializers import ModelSerializer, Serializer
 from rest_framework_gis.fields import GeometryField
 
 from src.metrics.tasks import create_metric_values
@@ -47,7 +47,21 @@ class MetricSerializer(ModelSerializer):
 
 class GeoJSONModelSerializer(serializers.Serializer):
     """Serializer for validating GeoJSON geometries."""
+    GEOJSON_SCHEMA = {
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "example": "Point"
+            },
+            "coordinates": {
+                "type": "array",
+                "example": [40.4168, -3.7038]
+            }
+        }
+    }
     geometry = GeometryField()
+    # TODO: Filter by time in the body
 
     class Meta:
         fields = ['geometry']
@@ -98,17 +112,30 @@ class MetricValueSerializer(ModelSerializer):
         fields = ['h3_index', 'time', 'value',  'prediction']
 
 
-class MetricValueGroupedSerializer(serializers.Serializer):
-    def to_representation(self, data):
-        grouped = defaultdict(list)
+class MetricPredictionSerializer(serializers.ModelSerializer):
+    value = serializers.FloatField(source='predicted_value')
+    lower_confidence_band = serializers.FloatField(allow_null=True)
+    upper_confidence_band = serializers.FloatField(allow_null=True)
+    anomaly_degree = serializers.FloatField(allow_null=True)
 
-        items = MetricValueSerializer(data, many=True).data
+    def to_representation(self, instance: models.MetricValue):
+        if self.allow_null and instance.get('predicted_value') is None:
+            return None
+        return super().to_representation(instance)
 
-        for item in items:
-            h3_index = item.pop('h3_index')
-            grouped[h3_index].append(item)
+    class Meta:
+        model = models.MetricValue
+        fields = ['value', 'lower_confidence_band', 'upper_confidence_band', 'anomaly_degree']
 
-        return dict(grouped)
+
+class MetricValueAggregateResponseSerializer(serializers.Serializer):
+    class MetricValueMeanSerializer(serializers.Serializer):
+        time = serializers.DateTimeField()
+        value = serializers.FloatField()
+        prediction = MetricPredictionSerializer(source='*', read_only=True, allow_null=True)
+
+    h3_indexes = serializers.ListField(child=serializers.CharField())
+    values = MetricValueMeanSerializer(many=True)
 
 
 class MetricSpatialDimensionSerializer(ModelSerializer):

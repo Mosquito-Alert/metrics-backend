@@ -11,7 +11,7 @@ def geojson_to_h3_shape(geometry: dict):
             for i in range(1, len(geometry))  # interior rings
         ]
 
-        return h3.LatLngPoly(exterior, holes)
+        return h3.LatLngPoly(exterior, *holes)
 
     elif isinstance(geometry, MultiPolygon):
         polygons = []
@@ -24,7 +24,7 @@ def geojson_to_h3_shape(geometry: dict):
                 for i in range(1, len(poly))
             ]
 
-            polygons.append(h3.LatLngPoly(exterior, holes))
+            polygons.append(h3.LatLngPoly(exterior, *holes))
 
         return h3.LatLngMultiPoly(*polygons)
 

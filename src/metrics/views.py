@@ -111,7 +111,7 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
             ],
             responses={
                 200: OpenApiResponse(
-                    description="Grouped by h3_index",
+                    description="Aggregated metric values by geometry",
                     response=serializers.MetricValueAggregateResponseSerializer,
                 )}
         )

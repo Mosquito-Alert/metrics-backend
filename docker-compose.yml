@@ -4,7 +4,7 @@ services:
     container_name: metrics-db
     hostname: db
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:5434:5432"
     volumes:
       - metrics-db_data:/var/lib/postgresql/data
       - metrics-db_data_backups:/backups
@@ -32,11 +32,11 @@ services:
       - metrics-broker:/var/lib/rabbitmq
 
   backend_api: &api
-    image:  ghcr.io/mosquito-alert/metrics-backend:0.2.0
+    image:  ghcr.io/mosquito-alert/metrics-backend:2.0.0
     container_name: metrics-api
     hostname: api
     ports:
-      - "127.0.0.1:8000:5000"
+      - "127.0.0.1:8010:5000"
     volumes:
       - ./static:/usr/app/static
     env_file:
@@ -67,7 +67,7 @@ services:
     container_name: metrics-flower
     hostname: flower
     ports:
-      - "127.0.0.1:5555:5555"
+      - "127.0.0.1:5556:5555"
     command: /scripts/start_flower
     healthcheck:
       disable: true

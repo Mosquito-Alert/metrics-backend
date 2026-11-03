@@ -66,6 +66,7 @@ services:
       context: .
       args:
         - DEV=true
+        - BUILD_ENVIRONMENT=local
     image: mosquito-alert/metrics-api
     container_name: metrics-api
     hostname: api

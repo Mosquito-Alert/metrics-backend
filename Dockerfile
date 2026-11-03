@@ -11,11 +11,12 @@ EXPOSE 8000
 ARG DEV=false
 ARG APP_HOME=/usr/app
 ARG SHARED_TEMP_DIR=/shared_temp
+ARG BUILD_ENVIRONMENT
 
 RUN addgroup --system django && \
     adduser --system  --disabled-password --no-create-home --ingroup django django-user
 
-COPY ./requirements.txt /tmp/requirements.txt
+COPY ./requirements/${BUILD_ENVIRONMENT}.txt /tmp/requirements.txt
 COPY --chmod=+x ./scripts /scripts
 COPY --chown=django-user:django . ${APP_HOME}
 RUN mkdir -p ${SHARED_TEMP_DIR} && chmod 777 ${SHARED_TEMP_DIR}

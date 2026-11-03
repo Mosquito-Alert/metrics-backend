@@ -1,7 +1,7 @@
 import os
+
 from .base import *  # noqa
 from .base import DATABASES  # noqa: F401
-
 
 # * GENERAL
 # ------------------------------------------------------------------------------
@@ -72,5 +72,5 @@ LOGGING = {
 
 # Spectacular settings
 SPECTACULAR_SETTINGS["SERVERS"] = [  # noqa: F405
-    {"url": "https://metrics.mosquitoalert.com/api/v1", "description": "Production server"}
+    {"url": "https://metrics.mosquitoalert.com/api/v2", "description": "Production server"}
 ]

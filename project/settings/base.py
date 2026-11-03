@@ -45,6 +45,7 @@ THIRD_PARTY_APPS = [
     'rest_framework_gis',
     'rest_framework.authtoken',
     'drf_spectacular',
+    "drf_spectacular_sidecar",
     'django_filters',
     'drf_standardized_errors',
     # 'django_hosts',
@@ -237,6 +238,9 @@ SPECTACULAR_SETTINGS = {
     'POSTPROCESSING_HOOKS': [],  # NOTE: needed for the openapi-generator and so we can upload files through the UI.
     'ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE': False,  # See: https://github.com/tfranzel/drf-spectacular/issues/235
     'ENUM_GENERATE_CHOICE_DESCRIPTION': False,
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
     'COMPONENT_SPLIT_REQUEST': True,
 }
 

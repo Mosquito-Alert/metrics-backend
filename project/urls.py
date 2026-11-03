@@ -14,30 +14,28 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import (SpectacularAPIView, SpectacularJSONAPIView,
                                    SpectacularRedocView,
                                    SpectacularSwaggerView)
 
-from django.conf import settings
-
 api_version = 'v2'
-base_url = f"api/{api_version}"
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path(f'{base_url}/schema/openapi.yml', SpectacularAPIView.as_view(api_version=api_version), name='api-schema'),
-    path(f'{base_url}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version=api_version),
+    path(f'{api_version}/schema/openapi.yml', SpectacularAPIView.as_view(api_version=api_version), name='api-schema'),
+    path(f'{api_version}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version=api_version),
          name='api-schema-json'),
     path(
-        f'{base_url}/docs/',
+        f'{api_version}/swagger/',
         SpectacularSwaggerView.as_view(url_name='api-schema',),
         name='swagger-ui'
     ),
-    path(f'{base_url}/docs/redoc/', SpectacularRedocView.as_view(url_name='api-schema'), name='redoc'),
-    path(f'{base_url}/', include('src.metrics.urls', namespace='metrics')),
-    path(f'{base_url}/', include('src.tasks.urls', namespace='tasks')),
+    path(f'{api_version}/', SpectacularRedocView.as_view(url_name='api-schema'), name='redoc'),
+    path(f'{api_version}/', include('src.metrics.urls', namespace='metrics')),
+    path(f'{api_version}/', include('src.tasks.urls', namespace='tasks')),
 ]
 
 

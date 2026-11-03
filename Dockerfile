@@ -13,12 +13,8 @@ ARG APP_HOME=/usr/app
 ARG SHARED_TEMP_DIR=/shared_temp
 ARG BUILD_ENVIRONMENT
 
-RUN addgroup --system django && \
-    adduser --system  --disabled-password --no-create-home --ingroup django django-user
-
-COPY ./requirements/${BUILD_ENVIRONMENT}.txt /tmp/requirements.txt
+COPY ./requirements /tmp/requirements/
 COPY --chmod=+x ./scripts /scripts
-COPY --chown=django-user:django . ${APP_HOME}
 RUN mkdir -p ${SHARED_TEMP_DIR} && chmod 777 ${SHARED_TEMP_DIR}
 WORKDIR ${APP_HOME}
 
@@ -41,13 +37,12 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 # Update pip, set up the virtual environment and install python requirements
 RUN python -m venv /py && \
     /py/bin/pip install --upgrade pip && \
-    /py/bin/pip install -r /tmp/requirements.txt && \
+    /py/bin/pip install -r /tmp/requirements/${BUILD_ENVIRONMENT}.txt && \
     # Cleaning
     rm -rf /tmp
 
 
 ENV PATH="/scripts:/py/bin:$PATH"
 
-USER django-user
 
 CMD ["start_prod"]

@@ -72,5 +72,5 @@ LOGGING = {
 
 # Spectacular settings
 SPECTACULAR_SETTINGS["SERVERS"] = [  # noqa: F405
-    {"url": "https://metrics.mosquitoalert.com/api/v2", "description": "Production server"}
+    {"url": "https://metrics.mosquitoalert.com/v2", "description": "Production server"}
 ]

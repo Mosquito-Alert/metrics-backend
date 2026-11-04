@@ -218,26 +218,52 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'API for the Metrics of the Mosquito Alert project',
     'VERSION': '2.0.0',
     'CONTACT': {
-        'name': 'Metrics',
-        'email': None,
-        'url': None,
+        "name": "Developers",
+        "email": "it@mosquitoalert.com",
+        "x-role": "responsible developer",
+    },
+    "LICENSE": {
+        # NOTE: identifier is necessary for the openapi-generator python SDK to work.
+        # If every update to openapi 3.1.0, a new field 'identifier' can be added
+        "name": "GPL-3.0-only",  # IMPORTANT: for openapi 3.0.3 must be a valid SPDX identifier.
+        # See: https://spdx.org/licenses/
+        "url": "https://github.com/Mosquito-Alert/metrics/blob/master/LICENSE.md",
     },
     'SERVERS': [
         {
-            'url': 'http://localhost:8000/api/v2/',
+            'url': 'http://localhost:8000/v2/',
             'description': 'Development API v2'
         },
     ],
-    'SCHEMA_PATH_PREFIX': '/api/v[0-9]',
+    'SCHEMA_PATH_PREFIX': r'/v[0-9]+(?=/)',
     'SCHEMA_PATH_PREFIX_TRIM': True,
     'SWAGGER_UI_SETTINGS': {
         'deepLinking': True,
         'persistAuthorization': True,
     },
     'OAS_VERSION': '3.0.3',
+    "SERVE_INCLUDE_SCHEMA": False,
     'POSTPROCESSING_HOOKS': [],  # NOTE: needed for the openapi-generator and so we can upload files through the UI.
     'ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE': False,  # See: https://github.com/tfranzel/drf-spectacular/issues/235
     'ENUM_GENERATE_CHOICE_DESCRIPTION': False,
+    "EXTENSIONS_INFO": {
+        "x-logo": {
+            "altText": "Mosquito Alert Logo",
+            "backgroundColor": "#fafafa",
+            "url": "https://api.mosquitoalert.com/static/api/icons/og_logo.png",
+        },
+    },
+    "REDOC_UI_SETTINGS": {
+        "maxDisplayedEnumValues": "5",
+        "sortTagsAlphabetically": True,
+        "sortOperationsAlphabetically": True,
+        "theme": {
+            "sidebar": {"width": "380px"},
+            "logo": {
+                "maxWidth": "260px",
+            },
+        },
+    },
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
     "REDOC_DIST": "SIDECAR",

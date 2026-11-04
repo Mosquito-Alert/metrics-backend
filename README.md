@@ -111,7 +111,7 @@ make restart
 
 Access the application:
 
-- **API**: http://localhost:8000/api/v2/
+- **API**: http://localhost:8000/v2/
 - **Admin**: http://localhost:8000/admin/
 
 ### Available Commands
@@ -141,8 +141,12 @@ The `Makefile` provides convenient commands for development:
 
 The API uses drf-spectacular for automatic OpenAPI schema generation:
 
-- **ReDoc**: http://localhost:8000/api/v2/
-- **OpenAPI Schema**: http://localhost:8000/api/v2/openapi.yml
+- **ReDoc**: http://localhost:8000/v2/
+- **OpenAPI Schema**: http://localhost:8000/v2/schema/openapi.yml
+
+The schema server URL includes `/v2`, while schema paths, tags, and operation IDs
+exclude the version prefix. For example, the metrics list link in ReDoc is
+`http://localhost:8000/v2/#tag/metrics/operation/metrics_list`.
 
 ### Official SDKs
 

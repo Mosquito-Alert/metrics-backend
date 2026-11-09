@@ -231,11 +231,11 @@ SPECTACULAR_SETTINGS = {
     },
     'SERVERS': [
         {
-            'url': 'http://localhost:8000/v2/',
+            'url': 'http://localhost:8000/api/v2/',
             'description': 'Development API v2'
         },
     ],
-    'SCHEMA_PATH_PREFIX': r'/v[0-9]+(?=/)',
+    'SCHEMA_PATH_PREFIX': r'/api/v[0-9]+(?=/)',
     'SCHEMA_PATH_PREFIX_TRIM': True,
     'SWAGGER_UI_SETTINGS': {
         'deepLinking': True,

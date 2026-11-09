@@ -25,7 +25,7 @@ api_version = 'v2'
 base_api_path = f'api/{api_version}'
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path(f'{base_api_path}/admin/', admin.site.urls),
     path(f'{base_api_path}/schema/openapi.yml', SpectacularAPIView.as_view(api_version=api_version), name='api-schema'),
     path(f'{base_api_path}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version=api_version),
          name='api-schema-json'),

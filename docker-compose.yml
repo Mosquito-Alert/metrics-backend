@@ -34,7 +34,7 @@ services:
       - metrics-broker:/var/lib/rabbitmq
 
   backend_api: &api
-    image:  ghcr.io/mosquito-alert/metrics-backend:0.2.2
+    image:  ghcr.io/mosquito-alert/metrics-backend:0.2.3
     container_name: metrics-api
     hostname: api
     ports:

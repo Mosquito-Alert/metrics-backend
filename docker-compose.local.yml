@@ -1,3 +1,5 @@
+name: metrics_v2
+
 services:
   db:
     image: postgres:15.7
@@ -37,29 +39,17 @@ services:
       - ./.envs/.local/.django.env
 
   storage:
-    image: minio/minio:latest
-    container_name: storage
-    hostname: storage
+    image: rustfs/rustfs:1.0.4
+    container_name: metrics-storage
+    hostname: metrics-storage
     command: server /data --console-address ":9001"
     ports:
       - "9010:9000" # S3 API
       - "9011:9001" # Web console
     env_file:
-      - ./.envs/.local/.minio.env
+      - ./.envs/.local/.s3.env
     volumes:
-      - minio_data:/data
-
-  createbuckets:
-    image: minio/mc:latest
-    container_name: create-buckets
-    hostname: create-buckets
-    depends_on:
-      - storage
-    env_file:
-      - ./.envs/.local/.minio.env
-    volumes:
-      - ./scripts/create-buckets.sh:/create-buckets.sh
-    entrypoint: ["/bin/sh", "/create-buckets.sh"]
+      - storage_data:/data
 
   api: &api
     build:
@@ -105,12 +95,24 @@ services:
       - "5556:5555"
     command: /scripts/start_flower
 
+  createbuckets:
+    <<: *api
+    container_name: metrics-create-buckets
+    hostname: metrics-create-buckets
+    ports: []
+    restart: "no"
+    command: python manage.py create_bucket
+    healthcheck:
+      disable: true
+    depends_on:
+      - storage
+
   nginx:
     image: nginx:latest
     container_name: metrics-nginx
     hostname: nginx
     env_file:
-      - ./.envs/.local/.minio.env
+      - ./.envs/.local/.s3.env
     ports:
       - "8080:80"
     volumes:
@@ -126,5 +128,5 @@ volumes:
   metrics-olap_data:
   metrics-olap_server:
   metrics-redis_data:
-  minio_data:
+  storage_data:
 

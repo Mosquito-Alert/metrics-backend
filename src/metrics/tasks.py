@@ -8,8 +8,8 @@ import rasterio
 from celery import shared_task
 from django.conf import settings
 from h3ronpy.pandas.raster import rasterize_cells
+from rasterio.warp import Resampling, calculate_default_transform, reproject
 from rest_framework.exceptions import ValidationError
-from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 from project.s3 import s3_client
 from src.metrics import models
@@ -186,16 +186,6 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     src_crs = "EPSG:4326"
     dst_crs = "EPSG:3857"
     height, width = size, size  # array.shape
-    profile = {
-        "driver": "GTiff",
-        "dtype": array.dtype,
-        "count": 1,
-        "height": height,
-        "width": width,
-        "transform": transform,
-        "crs": src_crs,
-        "nodata": nodata_value,
-    }
     dst_transform, dst_width, dst_height = calculate_default_transform(
         src_crs, dst_crs, width, height, *rasterio.transform.array_bounds(height, width, transform)
     )
@@ -210,8 +200,8 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         dst_crs=dst_crs,
         resampling=Resampling.bilinear
     )
-    cog_profile = profile.copy()
-    cog_profile.update({
+
+    cog_profile = {
         "driver": "COG",
         "dtype": dst_array.dtype,
         "height": dst_height,
@@ -224,8 +214,7 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
         "blockysize": 256,
         "tiled": True,
         "nodata": nodata_value
-    })
-
+    }
     # Time format to YYYY-MM-DDTHH:MM
     time = time_dimension.time.strftime("%Y-%m-%dT%H:%M")
 

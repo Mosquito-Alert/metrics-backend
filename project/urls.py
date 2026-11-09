@@ -22,15 +22,16 @@ from drf_spectacular.views import (SpectacularAPIView, SpectacularJSONAPIView,
                                    SpectacularSwaggerView)
 
 api_version = 'v2'
+base_api_path = f'api/{api_version}'
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path(f'{api_version}/schema/openapi.yml', SpectacularAPIView.as_view(api_version=api_version), name='api-schema'),
-    path(f'{api_version}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version=api_version),
+    path(f'{base_api_path}/schema/openapi.yml', SpectacularAPIView.as_view(api_version=api_version), name='api-schema'),
+    path(f'{base_api_path}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version=api_version),
          name='api-schema-json'),
-    path(f'{api_version}/', SpectacularRedocView.as_view(url_name='api-schema'), name='redoc'),
-    path(f'{api_version}/', include('src.metrics.urls', namespace='metrics')),
-    path(f'{api_version}/', include('src.tasks.urls', namespace='tasks')),
+    path(f'{base_api_path}/', SpectacularRedocView.as_view(url_name='api-schema'), name='redoc'),
+    path(f'{base_api_path}/', include('src.metrics.urls', namespace='metrics')),
+    path(f'{base_api_path}/', include('src.tasks.urls', namespace='tasks')),
 ]
 
 
@@ -38,7 +39,7 @@ if settings.DEBUG:
     urlpatterns += [
         path('silk/', include('silk.urls', namespace='silk')),
         path(
-            f'{api_version}/swagger/',
+            f'{base_api_path}/swagger/',
             SpectacularSwaggerView.as_view(url_name="api-schema"),
             name="swagger-ui",
         ),

@@ -3,7 +3,7 @@ name: metrics_v1
 services:
   data_db:
     image: postgis/postgis:15-3.5
-    container_name: metrics-db
+    container_name: metrics-v1-db
     hostname: db
     ports:
       - "127.0.0.1:5433:5432"
@@ -16,14 +16,14 @@ services:
 
   data_redis:
     image: redis:7.0.15
-    container_name: metrics-redis
+    container_name: metrics-v1-redis
     hostname: redis
     env_file:
       - ./.envs/.production/.django.env
 
   data_broker:
     image: rabbitmq:4.1.0-management
-    container_name: metrics-broker
+    container_name: metrics-v1-broker
     hostname: broker
     configs:
       - source: plugins
@@ -35,7 +35,7 @@ services:
 
   backend_api: &api
     image:  ghcr.io/mosquito-alert/metrics-backend:0.2.3
-    container_name: metrics-api
+    container_name: metrics-v1-api
     hostname: api
     ports:
       - "127.0.0.1:8070:5000"
@@ -56,7 +56,7 @@ services:
 
   backend_worker:
     <<: *api
-    container_name: metrics-worker
+    container_name: metrics-v1-worker
     hostname: worker
     ports: []
     command: /scripts/start_worker
@@ -66,7 +66,7 @@ services:
 
   backend_worker_flower:
     <<: *api
-    container_name: metrics-flower
+    container_name: metrics-v1-flower
     hostname: flower
     ports:
       - "127.0.0.1:5555:5555"

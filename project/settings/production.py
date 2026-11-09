@@ -19,6 +19,7 @@ DATABASES['default']['PASSWORD'] = os.environ.get('POSTGRES_PASSWORD')  # noqa: 
 SESSION_COOKIE_SECURE = True
 # https://docs.djangoproject.com/en/dev/ref/settings/#csrf-cookie-secure
 CSRF_COOKIE_SECURE = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # * CORS & HOSTS
 # ------------------------------------------------------------------------------
@@ -27,6 +28,10 @@ CORS_ALLOWED_ORIGINS = os.environ.get(
     "https://labs.mosquitoalert.com"
 ).split(",")
 
+# * STATIC
+# ------------------------------------------------------------------------------
+STATIC_URL = '/api/v2/static/'
+STATIC_ROOT = '/usr/app/static'   # matches the volume mount
 
 # * LOGGING
 # ------------------------------------------------------------------------------

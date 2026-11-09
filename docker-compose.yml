@@ -32,11 +32,11 @@ services:
       - metrics-broker:/var/lib/rabbitmq
 
   backend_api: &api
-    image:  ghcr.io/mosquito-alert/metrics-backend:0.2.0
+    image:  ghcr.io/mosquito-alert/metrics-backend:0.2.1
     container_name: metrics-api
     hostname: api
     ports:
-      - "127.0.0.1:8000:5000"
+      - "127.0.0.1:8001:5000"
     volumes:
       - ./static:/usr/app/static
     env_file:

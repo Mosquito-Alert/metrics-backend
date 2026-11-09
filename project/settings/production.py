@@ -1,7 +1,7 @@
 import os
+
 from .base import *  # noqa
 from .base import DATABASES  # noqa: F401
-
 
 # * GENERAL
 # ------------------------------------------------------------------------------
@@ -19,6 +19,7 @@ DATABASES['default']['PASSWORD'] = os.environ.get('POSTGRES_PASSWORD')  # noqa: 
 SESSION_COOKIE_SECURE = True
 # https://docs.djangoproject.com/en/dev/ref/settings/#csrf-cookie-secure
 CSRF_COOKIE_SECURE = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # * CORS & HOSTS
 # ------------------------------------------------------------------------------
@@ -26,6 +27,11 @@ CORS_ALLOWED_ORIGINS = os.environ.get(
     "CORS_ALLOWED_ORIGINS",
     "https://labs.mosquitoalert.com"
 ).split(",")
+
+# * STATIC
+# ------------------------------------------------------------------------------
+STATIC_URL = '/api/v1/static/'
+STATIC_ROOT = '/usr/app/static'   # matches the volume mount
 
 
 # * LOGGING

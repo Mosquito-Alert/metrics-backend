@@ -11,7 +11,7 @@ EXPOSE 8000
 ARG DEV=false
 ARG APP_HOME=/usr/app
 ARG SHARED_TEMP_DIR=/shared_temp
-ARG BUILD_ENVIRONMENT
+ARG BUILD_ENVIRONMENT=production
 
 COPY ./requirements /tmp/requirements/
 COPY --chmod=+x ./scripts /scripts

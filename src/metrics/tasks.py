@@ -141,7 +141,10 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     """
     time_dimension = models.MetricTimeDimension.objects.get(id=time_dimension_id)
 
-    print("Starting rasterization for time dimension:", time_dimension.id)
+    metric = models.Metric.objects.get(id=time_dimension.metric_id)
+    metric_code = metric.code
+
+    print("Starting rasterization for time dimension: ", time_dimension.id, " for the metric: ", metric_code)
 
     metrics = models.MetricValue.objects.filter(
         metric_id=time_dimension.metric_id,
@@ -225,7 +228,7 @@ def rasterize_cells_for_time_dimension(time_dimension_id: int):
     with rasterio.open(temp_tiff_path, "w", **cog_profile) as dst:
         dst.write(dst_array, 1)
 
-    key = f"rasters/{time}.tiff"
+    key = f"{metric_code}/rasters/{time}.tiff"
     s3_client.upload_file(temp_tiff_path, settings.S3_BUCKET_NAME, key)
     clean_file(temp_tiff_path)
 

@@ -42,7 +42,6 @@ services:
     image: rustfs/rustfs:1.0.4
     container_name: metrics-storage
     hostname: metrics-storage
-    command: server /data --console-address ":9001"
     ports:
       - "9010:9000" # S3 API
       - "9011:9001" # Web console

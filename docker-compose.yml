@@ -1,0 +1,122 @@
+name: metrics_v2
+
+services:
+  db:
+    image: postgres:15.7
+    container_name: metrics-db
+    hostname: db
+    volumes:
+      - metrics-db_data:/var/lib/postgresql/data
+      - metrics-db_data_backups:/backups
+    env_file:
+      - ./.envs/.production/.postgres.env
+
+  olap:
+    image: clickhouse/clickhouse-server:25.6
+    container_name: metrics-olap
+    hostname: olap
+    volumes:
+      - metrics-olap_data:/var/lib/clickhouse
+      - metrics-olap_server:/var/lib/clickhouse-server
+    env_file:
+      - ./.envs/.production/.clickhouse.env
+
+  redis:
+    image: redis:7.0.15
+    container_name: metrics-redis
+    hostname: redis
+    volumes:
+      - metrics-redis_data:/data
+    env_file:
+      - ./.envs/.production/.django.env
+
+  storage:
+    image: rustfs/rustfs:1.0.4
+    container_name: metrics-storage
+    hostname: metrics-storage
+    ports:
+      - "127.0.0.1:9011:9001" # Web console
+    env_file:
+      - ./.envs/.production/.s3.env
+    volumes:
+      - storage_data:/data
+
+  api: &api
+    image: ghcr.io/mosquito-alert/metrics-backend:2.0.2
+    container_name: metrics-api
+    hostname: api
+    volumes:
+      - ./static:/usr/app/static
+      - shared_temp:/shared_temp
+    env_file:
+      - ./.envs/.production/.django.env
+      - ./.envs/.production/.postgres.env
+      - ./.envs/.production/.clickhouse.env
+    healthcheck:
+      test: "curl -f http://localhost:8000/ping/ || exit 1"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_started
+      olap:
+        condition: service_started
+      redis:
+        condition: service_started
+      createbuckets:
+        condition: service_completed_successfully
+    command: /scripts/start
+
+  worker:
+    <<: *api
+    container_name: metrics-worker
+    hostname: worker
+    ports: []
+    healthcheck:
+      disable: true
+    command: /scripts/start_worker
+
+  worker_flower:
+    <<: *api
+    container_name: metrics-flower
+    hostname: flower
+    ports:
+      - "127.0.0.1:5556:5555"
+    healthcheck:
+      disable: true
+    command: /scripts/start_flower
+
+  createbuckets:
+    <<: *api
+    container_name: metrics-create-buckets
+    hostname: metrics-create-buckets
+    ports: []
+    restart: "no"
+    command: python manage.py create_bucket
+    healthcheck:
+      disable: true
+    depends_on:
+      - storage
+
+  nginx:
+    image: nginx:1.27
+    container_name: metrics-nginx
+    hostname: nginx
+    ports:
+      - "127.0.0.1:8072:80"     # the host nginx proxies /api/v2/ here
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - storage
+
+volumes:
+  shared_temp:
+  metrics-db_data:
+  metrics-db_data_backups:
+  metrics-olap_data:
+  metrics-olap_server:
+  metrics-redis_data:
+  storage_data:

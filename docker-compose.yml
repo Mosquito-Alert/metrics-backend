@@ -52,6 +52,7 @@ services:
       - ./.envs/.production/.django.env
       - ./.envs/.production/.postgres.env
       - ./.envs/.production/.clickhouse.env
+      - ./.envs/.production/.s3.env
     healthcheck:
       test: "curl -f http://localhost:8000/ping/ || exit 1"
       interval: 30s

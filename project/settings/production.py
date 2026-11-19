@@ -5,7 +5,7 @@ from .base import DATABASES  # noqa: F401
 
 # * GENERAL
 # ------------------------------------------------------------------------------
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "api.mosquitoalert.com").split(",")  # noqa: F405
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "metrics.mosquitoalert.com").split(",")  # noqa: F405
 DEBUG = False
 
 # * DATABASES
@@ -25,7 +25,7 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # ------------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = os.environ.get(
     "CORS_ALLOWED_ORIGINS",
-    "https://labs.mosquitoalert.com"
+    "https://metrics.mosquitoalert.com"
 ).split(",")
 
 # * STATIC

@@ -13,6 +13,7 @@ ARG APP_HOME=/usr/app
 ARG SHARED_TEMP_DIR=/shared_temp
 ARG BUILD_ENVIRONMENT=production
 
+COPY . ${APP_HOME}
 COPY ./requirements /tmp/requirements/
 COPY --chmod=+x ./scripts /scripts
 RUN mkdir -p ${SHARED_TEMP_DIR} && chmod 777 ${SHARED_TEMP_DIR}

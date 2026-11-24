@@ -118,22 +118,23 @@ Access the application:
 
 The `Makefile` provides convenient commands for development:
 
-| Command             | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `make start`        | Create and start all containers              |
-| `make stop`         | Stop all containers                          |
-| `make restart`      | Restart all services                         |
-| `make down`         | Stop and remove containers                   |
-| `make kill`         | Force stop all containers                    |
-| `make logs`         | Show container logs (follow mode)            |
-| `make ps`           | List running containers                      |
-| `make shell`        | Open bash shell in the Django container      |
-| `make psql`         | Start PostgreSQL command-line client         |
-| `make dbshell`      | Start database shell (alias of `make psql`)  |
-| `make dbshell_olap` | Start ClickHouse (OLAP) command-line client  |
-| `make db_restore`   | Restore a database from a backup (see below) |
-| `make clean_data`   | Remove all data volumes                      |
-| `make clean_docker` | Remove all containers and images             |
+| Command             | Description                                                         |
+| ------------------- | ------------------------------------------------------------------- |
+| `make start`        | Create and start all containers                                     |
+| `make stop`         | Stop all containers                                                 |
+| `make restart`      | Restart all services                                                |
+| `make down`         | Stop and remove containers                                          |
+| `make kill`         | Force stop all containers                                           |
+| `make logs`         | Show container logs (follow mode)                                   |
+| `make ps`           | List running containers                                             |
+| `make shell`        | Open bash shell in the Django container                             |
+| `make psql`         | Start PostgreSQL command-line client                                |
+| `make dbshell`      | Start database shell (alias of `make psql`)                         |
+| `make dbshell_olap` | Start ClickHouse (OLAP) command-line client                         |
+| `make db_restore`   | Restore PostgreSQL, ClickHouse or S3 data from a backup (see below) |
+| `make db_backup`    | Export data to `./backup` (see below)                               |
+| `make clean_data`   | Remove all data volumes                                             |
+| `make clean_docker` | Remove all containers and images                                    |
 
 Run `make help` to list the commands that have a description.
 
@@ -150,6 +151,89 @@ make db_restore DB_TYPE=olap file=<path>
 ```
 
 **Stop the services that write to the databases first** (`docker compose -f docker-compose.local.yml stop api worker worker_flower`), otherwise open connections can make the restore fail or leave inconsistent data.
+
+#### S3 (RustFS) parameters (`DB_TYPE=s3`)
+
+```bash
+# Restore from the default folder (backup/s3/<bucket>)
+make db_restore DB_TYPE=s3
+
+# Restore from a specific folder
+make db_restore DB_TYPE=s3 file=<path-to-folder>
+```
+
+For S3, `file` is a **folder**, not a file. Its contents are uploaded to the bucket root.
+
+| Parameter          | Default                       | Description                                                           |
+| ------------------ | ----------------------------- | --------------------------------------------------------------------- |
+| `file`             | `./backup/s3/<S3_BUCKET>`     | Folder to upload                                                      |
+| `S3_BUCKET`        | `metricvalues`                | Destination bucket                                                    |
+| `S3_CREATE_BUCKET` | `true`                        | Run `manage.py create_bucket` first (bucket, versioning, public read) |
+| `S3_ENDPOINT`      | `http://metrics-storage:9000` | S3 endpoint as seen from inside the compose network                   |
+| `S3_ENV_FILE`      | `.envs/.local/.s3.env`        | Env file with `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY`             |
+| `S3_NETWORK`       | _(auto-detected)_             | Docker network of the compose project                                 |
+
+Existing objects are never deleted. Files that already exist with the same content are skipped, so the command can be repeated safely. After uploading, every file is verified against the backup.
+
+```bash
+# Production
+make db_restore DB_TYPE=s3 file=<path> DOCKER_COMPOSE_LOCAL=docker-compose.yml S3_ENV_FILE=.envs/.production/.s3.env
+```
+
+### Backing up data
+
+`make db_backup` exports data to the host, into a `backup/` folder created in the directory where you run the command. Files are timestamped, so backups are never overwritten.
+
+```bash
+make db_backup                    # PostgreSQL (default)
+make db_backup DB_TYPE=olap       # ClickHouse
+make db_backup DB_TYPE=s3         # RustFS bucket
+make db_backup DB_TYPE=all        # all three
+```
+
+Result:
+
+```
+backup/
+├── postgres_20261124_153000.dump
+├── olap_metrics_metrics_metricvalue_20261124_153000.native.zst
+└── s3/
+    └── metricvalues/...
+```
+
+The PostgreSQL and ClickHouse files can be restored directly with `make db_restore` (see above).
+
+| Parameter          | Default                       | Description                                               |
+| ------------------ | ----------------------------- | --------------------------------------------------------- |
+| `DB_TYPE`          | `postgres`                    | What to export: `postgres`, `olap`, `s3` or `all`         |
+| `BACKUP_DIR`       | `./backup`                    | Destination folder                                        |
+| `PG_USER`, `PG_DB` | from the container env        | PostgreSQL user and database                              |
+| `OLAP_DB`          | `metrics`                     | ClickHouse database                                       |
+| `OLAP_TABLE`       | `metrics_metricvalue`         | ClickHouse table (one per run)                            |
+| `OLAP_FORMAT`      | `Native`                      | Export format                                             |
+| `OLAP_COMPRESS`    | `zstd`                        | `zstd`, `gzip` or `none`                                  |
+| `S3_BUCKET`        | `metricvalues`                | Bucket to copy                                            |
+| `S3_ENDPOINT`      | `http://metrics-storage:9000` | S3 endpoint, as seen from inside the compose network      |
+| `S3_ENV_FILE`      | `.envs/.local/.s3.env`        | Env file with `RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` |
+| `S3_NETWORK`       | _(auto-detected)_             | Docker network of the compose project                     |
+
+Examples:
+
+```bash
+# Another ClickHouse table, gzip instead of zstd
+make db_backup DB_TYPE=olap OLAP_TABLE=other_table OLAP_COMPRESS=gzip
+
+# Back up production (from the server)
+make db_backup DB_TYPE=all DOCKER_COMPOSE_LOCAL=docker-compose.yml S3_ENV_FILE=.envs/.production/.s3.env
+```
+
+Notes:
+
+- The three exports are taken one after another, not as one snapshot. For a consistent backup, stop the services that write first (`docker compose -f docker-compose.local.yml stop api worker worker_flower`).
+- Only the current version of each S3 object is exported. Previous versions of a versioned bucket are not included.
+- ClickHouse exports use a plain `SELECT *`, so rows not yet merged by the `ReplacingMergeTree` may include duplicates. They collapse again on merge after the restore.
+- `zstd` must be installed on the host for the default `OLAP_COMPRESS`.
+- Backups contain all your data and the production ones are sensitive. Don't commit them, and delete them from the server once copied.
 
 #### Common parameters
 

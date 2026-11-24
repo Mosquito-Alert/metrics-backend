@@ -114,26 +114,107 @@ Access the application:
 - **API**: http://localhost:8000/v2/
 - **Admin**: http://localhost:8000/admin/
 
-### Available Commands
+#### Available Commands
 
 The `Makefile` provides convenient commands for development:
 
-| Command                                        | Description                             |
-| ---------------------------------------------- | --------------------------------------- |
-| `make start`                                   | Create and start all containers         |
-| `make stop`                                    | Stop all containers                     |
-| `make restart`                                 | Restart all services                    |
-| `make down`                                    | Stop and remove containers              |
-| `make logs`                                    | Show container logs (follow mode)       |
-| `make shell`                                   | Open bash shell in Django container     |
-| `make psql`                                    | Start PostgreSQL command-line client    |
-| `make dbshell`                                 | Start database shell                    |
-| `make dbshell_olap`                            | Start OLAP database shell               |
-| `make ps`                                      | List running containers                 |
-| `make db_restore file=<path> DB_TYPE=postgres` | Restore PostgreSQL database from backup |
-| `make db_restore file=<path> DB_TYPE=olap`     | Restore OLAP database from backup       |
-| `make clean_data`                              | Remove all data volumes                 |
-| `make clean_docker`                            | Remove all containers and images        |
+| Command             | Description                                  |
+| ------------------- | -------------------------------------------- |
+| `make start`        | Create and start all containers              |
+| `make stop`         | Stop all containers                          |
+| `make restart`      | Restart all services                         |
+| `make down`         | Stop and remove containers                   |
+| `make kill`         | Force stop all containers                    |
+| `make logs`         | Show container logs (follow mode)            |
+| `make ps`           | List running containers                      |
+| `make shell`        | Open bash shell in the Django container      |
+| `make psql`         | Start PostgreSQL command-line client         |
+| `make dbshell`      | Start database shell (alias of `make psql`)  |
+| `make dbshell_olap` | Start ClickHouse (OLAP) command-line client  |
+| `make db_restore`   | Restore a database from a backup (see below) |
+| `make clean_data`   | Remove all data volumes                      |
+| `make clean_docker` | Remove all containers and images             |
+
+Run `make help` to list the commands that have a description.
+
+### Restoring a database
+
+`make db_restore` restores either database from a backup file. Every parameter can be overridden on the command line.
+
+```bash
+# PostgreSQL (custom-format dump made with pg_dump -Fc)
+make db_restore file=<path>
+
+# ClickHouse (Native-format export; .zst, .gz or plain files are detected by extension)
+make db_restore DB_TYPE=olap file=<path>
+```
+
+**Stop the services that write to the databases first** (`docker compose -f docker-compose.local.yml stop api worker worker_flower`), otherwise open connections can make the restore fail or leave inconsistent data.
+
+#### Common parameters
+
+| Parameter              | Default                    | Description                                                   |
+| ---------------------- | -------------------------- | ------------------------------------------------------------- |
+| `file`                 | _(required)_               | Path to the backup file                                       |
+| `DB_TYPE`              | `postgres`                 | Database to restore: `postgres` or `olap`                     |
+| `DOCKER_COMPOSE_LOCAL` | `docker-compose.local.yml` | Compose file to use (e.g. `docker-compose.yml` in production) |
+| `DB_CONTAINER`         | `db`                       | PostgreSQL service name                                       |
+| `OLAP_CONTAINER`       | `olap`                     | ClickHouse service name                                       |
+| `API_CONTAINER`        | `api`                      | Django service name (used to run migrations)                  |
+
+#### PostgreSQL parameters (`DB_TYPE=postgres`)
+
+| Parameter         | Default          | Description                                         |
+| ----------------- | ---------------- | --------------------------------------------------- |
+| `PG_USER`         | `$POSTGRES_USER` | Database user (read from the container environment) |
+| `PG_DB`           | `$POSTGRES_DB`   | Database name (read from the container environment) |
+| `PG_JOBS_PERCENT` | `90`             | Percentage of CPU cores used for parallel restore   |
+
+The restore uses `--clean --if-exists --no-owner --no-acl`, so it replaces existing objects and can be run repeatedly.
+
+#### ClickHouse parameters (`DB_TYPE=olap`)
+
+| Parameter       | Default                | Description                                                              |
+| --------------- | ---------------------- | ------------------------------------------------------------------------ |
+| `OLAP_USER`     | `$CLICKHOUSE_USER`     | ClickHouse user (read from the container environment)                    |
+| `OLAP_PASSWORD` | `$CLICKHOUSE_PASSWORD` | ClickHouse password (read from the container environment)                |
+| `OLAP_DB`       | `metrics`              | Target database                                                          |
+| `OLAP_TABLE`    | `metrics_metricvalue`  | Target table                                                             |
+| `OLAP_FORMAT`   | `Native`               | Format of the backup file                                                |
+| `OLAP_MIGRATE`  | `true`                 | Run `manage.py migrate --database=clickhouse` first to create the tables |
+| `OLAP_TRUNCATE` | `false`                | Empty the target table before loading                                    |
+
+#### Examples
+
+```bash
+# Restore PostgreSQL
+make db_restore file=../data/migrate_data/metrics_backup.dump
+
+# Restore ClickHouse
+make db_restore DB_TYPE=olap file=../data/migrate_data/metrics_metricvalue.native.zst
+
+# Reload ClickHouse into a clean table
+make db_restore DB_TYPE=olap file=<path> OLAP_TRUNCATE=true
+
+# Another table, schema already exists
+make db_restore DB_TYPE=olap file=other.native.zst OLAP_TABLE=other_table OLAP_MIGRATE=false
+
+# Against the production compose file
+make db_restore DB_TYPE=olap file=<path> DOCKER_COMPOSE_LOCAL=docker-compose.yml
+```
+
+#### Creating the backup files
+
+```bash
+# PostgreSQL
+docker exec -i <db-container> sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --no-owner --no-acl' > metrics_backup.dump
+
+# ClickHouse (use -i, never -t, because a TTY corrupts binary output)
+docker exec -i <olap-container> clickhouse-client --user <user> --password '<password>' \
+  -q "SELECT * FROM metrics.metrics_metricvalue FORMAT Native" | zstd -T0 -3 > metrics_metricvalue.native.zst
+```
+
+`zstd` must be installed on the host for `.zst` files; use `gzip` otherwise.
 
 ## 📚 API Documentation & SDKs
 

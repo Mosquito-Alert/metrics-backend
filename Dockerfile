@@ -25,8 +25,8 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     build-essential \
     # Needed for docker healthcheck
     curl \
-    # psycopg2 dependencies
-    libpq-dev \
+    # postgresql and psycopg2 dependencies
+    postgresql-client libpq-dev \
     # TODO: Translations dependencies
     # gettext \
     # GIS dependencies. See: https://docs.djangoproject.com/en/5.2/ref/contrib/gis/install/geolibs/

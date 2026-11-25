@@ -14,30 +14,33 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import (SpectacularAPIView, SpectacularJSONAPIView,
                                    SpectacularRedocView,
                                    SpectacularSwaggerView)
 
-from django.conf import settings
-
-base_url = "api/v1"
+api_version = 'v2'
+base_api_path = f'api/{api_version}'
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path(f'{base_url}/schema/openapi.yml', SpectacularAPIView.as_view(api_version='v1'), name='api-schema'),
-    path(f'{base_url}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version='v1'), name='api-schema-json'),
-    path(
-        f'{base_url}/docs/',
-        SpectacularSwaggerView.as_view(url_name='api-schema',),
-        name='swagger-ui'
-    ),
-    path(f'{base_url}/docs/redoc/', SpectacularRedocView.as_view(url_name='api-schema'), name='redoc'),
-    path(f'{base_url}/', include('src.predictions.urls', namespace='predictions')),
-    path(f'{base_url}/', include('src.regions.urls', namespace='regions')),
+    path(f'{base_api_path}/admin/', admin.site.urls),
+    path(f'{base_api_path}/schema/openapi.yml', SpectacularAPIView.as_view(api_version=api_version), name='api-schema'),
+    path(f'{base_api_path}/schema/openapi.json', SpectacularJSONAPIView.as_view(api_version=api_version),
+         name='api-schema-json'),
+    path(f'{base_api_path}/', SpectacularRedocView.as_view(url_name='api-schema'), name='redoc'),
+    path(f'{base_api_path}/', include('src.metrics.urls', namespace='metrics')),
+    path(f'{base_api_path}/', include('src.tasks.urls', namespace='tasks')),
 ]
 
 
 if settings.DEBUG:
-    urlpatterns += [path('silk/', include('silk.urls', namespace='silk'))]
+    urlpatterns += [
+        path('silk/', include('silk.urls', namespace='silk')),
+        path(
+            f'{base_api_path}/swagger/',
+            SpectacularSwaggerView.as_view(url_name="api-schema"),
+            name="swagger-ui",
+        ),
+    ]

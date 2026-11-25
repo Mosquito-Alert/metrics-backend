@@ -1,0 +1,543 @@
+import math
+from datetime import datetime
+from typing import Optional, TypedDict
+
+import h3
+from django.contrib.postgres.fields import ArrayField
+from rest_framework.exceptions import ValidationError
+from django.db import IntegrityError, models
+from clickhouse_backend import models as clickhouse_models
+from django.utils.translation import gettext_lazy as _
+from django_lifecycle import BEFORE_UPDATE, LifecycleModelMixin, hook
+from django_lifecycle.conditions import WhenFieldHasChanged
+from rest_framework.fields import MaxValueValidator, MinValueValidator
+
+from src.metrics.managers import MetricValueManager
+from src.utils.database_features import RealField
+from src.utils.datetime import clean_time_field
+
+
+class PredictionResult(TypedDict):
+    datetime: datetime
+    yhat: float
+    yhat_upper: float
+    yhat_lower: float
+
+
+class Metric(models.Model):
+    """
+    Model to store the different metrics.
+    For example, the Bites Index, the Suitability Index, etc.
+    """
+    class TimeDimensionStepType(models.IntegerChoices):
+        """
+        Time dimension step for the metric.
+        """
+        DAILY = 1, _('Daily')
+        HOURLY = 2, _('Hourly')
+
+    name = models.CharField(
+        max_length=255,
+        unique=True, null=False, blank=False,
+        verbose_name=_('Name'),
+        help_text=_('The name of the metric.')
+    )
+    code = models.SlugField(
+        max_length=32,
+        unique=True, null=False, blank=False,
+        verbose_name=_('Code'),
+        help_text=_('The code of the metric, used for identification purposes. Example: bites.'),
+    )
+    time_dimension_step = models.PositiveSmallIntegerField(
+        choices=TimeDimensionStepType.choices,
+        null=False, blank=True,
+        default=TimeDimensionStepType.DAILY,
+        verbose_name=_('Time Dimension Step'),
+        help_text=_('The time dimension step for the metric. Minutes are the smallest unit.')
+    )
+    is_predictable = models.BooleanField(
+        null=False, blank=False,
+        verbose_name=_('Is Predictable'),
+        help_text=_('Whether the metric is predictable or not. If true, the metric will have a predictor '
+                    'associated to it, and the values will be predicted.'),
+    )
+    h3_resolution = models.PositiveSmallIntegerField(
+        default=6,
+        null=False, blank=False,
+        verbose_name=_('H3 Resolution'),
+        help_text=_('The H3 resolution of the metric. This is used to determine the H3 index of the metric.'),
+        validators=[MinValueValidator(0), MaxValueValidator(15)]
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = _('Metric')
+        verbose_name_plural = _('Metrics')
+
+    def __str__(self):
+        return self.name
+
+
+class PredictorConfig(models.Model):
+    """
+    Model to store the configuration of the predictor.
+    """
+    metric = models.OneToOneField(
+        Metric,
+        on_delete=models.CASCADE,
+        related_name='predictor_config',
+        verbose_name=_('Metric'),
+        help_text=_('The metric associated to the predictor configuration.')
+    )
+    yearly_seasonality = models.BooleanField(
+        null=False, blank=False,
+        default=True,
+        verbose_name=_('Yearly Seasonality'),
+        help_text=_('Whether the predictor should consider yearly seasonality.')
+    )
+    weekly_seasonality = models.BooleanField(
+        null=False, blank=False,
+        default=False,
+        verbose_name=_('Weekly Seasonality'),
+        help_text=_('Whether the predictor should consider weekly seasonality.')
+    )
+    daily_seasonality = models.BooleanField(
+        null=False, blank=False,
+        default=False,
+        verbose_name=_('Daily Seasonality'),
+        help_text=_('Whether the predictor should consider daily seasonality.')
+    )
+    growth = models.CharField(
+        max_length=32,
+        null=False, blank=False,
+        default='logistic',
+        verbose_name=_('Growth'),
+        help_text=_('The growth model to use for the predictor.'),
+    )
+
+    def __str__(self):
+        return f"Predictor Config for {self.metric.name}"
+
+    class Meta:
+        verbose_name = _('Predictor Config')
+        verbose_name_plural = _('Predictor Configs')
+
+
+class MetricValue(clickhouse_models.ClickhouseModel, LifecycleModelMixin):
+    """
+    Model to store the raw and predicted values of a metric.
+    """
+    # TODO: Apply compression to the table (custom migration)
+    # NOTE: Compresion ZSTD allows to reduce the storage that the MetricValue table uses.
+    # The higher the level, the better the compression, but the slower the writes.
+    # Values over 3 don't provide significant improvements in compression. Value 2 is a good compromise.
+    metric_id = clickhouse_models.Int64Field(
+        null=False, blank=False,
+        verbose_name=_('Metric ID'),
+        help_text=_('The ID of the metric associated to the value.'),
+    )
+    # TODO: integer conversion
+    h3_index = clickhouse_models.FixedStringField(
+        null=False, blank=True,
+        max_bytes=15,
+        verbose_name=_('H3 Index'),
+        help_text=_(
+            'The H3 index of the metric value boundary, used for spatial queries. '
+            'This is stored as a bigInt to avoid issues with large indices, '
+            'so it should be converted to/from hex strings if necessary.'
+        ),
+    )
+    time = clickhouse_models.DateTimeField(
+        null=False, blank=True,
+        verbose_name=_('Time'),
+        help_text=_('The time in which the raw value was recorded. Maximum precision is one minute.'),
+    )
+    value = clickhouse_models.Float32Field(
+        null=True, blank=True,
+        verbose_name=_('Value'),
+        help_text=_('The actual value of the raw data.'),
+    )
+    # Predictor fields
+    # It is preferible then to have these fields nullable (null takes only 1 bit per nullable field).
+    predicted_value = clickhouse_models.Float32Field(
+        null=True, blank=True,
+        verbose_name=_('Value'),
+        help_text=_('The predicted value.'),
+    )
+    lower_confidence_band = clickhouse_models.Float32Field(
+        null=True, blank=True,
+        verbose_name=_('Lower Confidence Band'),
+        help_text=_('The lower confidence band of the predicted value.'),
+    )
+    upper_confidence_band = clickhouse_models.Float32Field(
+        null=True, blank=True,
+        verbose_name=_('Upper Confidence Band'),
+        help_text=_('The upper confidence band of the predicted value.'),
+    )
+    anomaly_degree = clickhouse_models.Float32Field(
+        null=True, blank=True,
+        verbose_name=_('Anomaly Degree'),
+        help_text=_('The degree of the anomaly, a range of values that starts on -1 (a lower anomaly of the '
+                    'highest degree) and ends on +1 (a upper anomaly of the highest degree). The 0 value means that '
+                    'there is no anomaly. This value will be estimated at creation.'),
+    )
+
+    objects = MetricValueManager()
+
+    @property
+    def metric(self):
+        try:
+            return Metric.objects.get(pk=self.metric_id)
+        except Metric.DoesNotExist:
+            return None
+
+    @property
+    def spatial_dimension(self):
+        try:
+            return MetricSpatialDimension.objects.get(metric_id=self.metric_id, h3_index=self.h3_index)
+        except MetricSpatialDimension.DoesNotExist:
+            raise ValidationError(
+                f"The spatial dimension for metric {self.metric_id} and H3 index {self.h3_index} does not exist."
+            )
+
+    @property
+    def time_dimension(self):
+        try:
+            return MetricTimeDimension.objects.get(metric_id=self.metric_id, time=self.time)
+        except MetricTimeDimension.DoesNotExist:
+            raise ValidationError(
+                f"The time dimension for metric {self.metric_id} and time {self.time} does not exist."
+            )
+
+    def refresh_prediction(self) -> None:
+        """
+        (Async) Invokes the predictor and assign the Prediction fields.
+        """
+        pass
+        # refresh_prediction_task(self.metric.id, self.h3_index, self.time, refresh_progress=refresh_progress)
+        # refresh_prediction_task.delay(self.metric.id, self.h3_index, self.time, refresh_progress=refresh_progress)
+
+    def calculate_anomaly_degree(self) -> Optional[float]:
+        """
+        Calculates the anomaly degree based on the value and confidence bands.
+        """
+        anomaly_degree = None
+        if self.value is not None and self.lower_confidence_band is not None and self.upper_confidence_band is not None:
+            if self.value == 0:
+                # Handle the value == 0 case explicitly
+                if self.upper_confidence_band < 0:
+                    anomaly_degree = 1.0
+                elif self.lower_confidence_band > 0:
+                    anomaly_degree = -1.0
+                else:
+                    anomaly_degree = 0.0
+            # Value above upper confidence band
+            elif self.value > self.upper_confidence_band:
+                anomaly_degree = (self.value - self.upper_confidence_band) / self.value
+            # Value below lower confidence band
+            elif self.value < self.lower_confidence_band:
+                anomaly_degree = (self.value - self.lower_confidence_band) / self.value
+            # Value within confidence bands
+            else:
+                anomaly_degree = 0.0
+
+        return anomaly_degree
+
+    def clean(self, metric: Optional[Metric] = None, bulk=False):
+        if metric is None:
+            metric = Metric.objects.get(id=self.metric_id)
+
+        # H3 Index Validation
+        try:
+            int(self.h3_index, 16)
+        except TypeError:
+            raise ValidationError("Invalid H3 index. Needs to be hexadecimal.")
+        if not h3.is_valid_cell(self.h3_index):
+            raise ValidationError(
+                "The H3 index must be a valid H3 cell."
+            )
+        if h3.get_resolution(self.h3_index) != metric.h3_resolution:
+            raise ValidationError(
+                f"The H3 index ({self.h3_index}) must have the same resolution as the metric."
+            )
+
+        # Value Validation
+        if self.value is not None and math.isnan(self.value):
+            self.value = None
+        if self.value is None and self.predicted_value is None:
+            raise ValidationError(
+                "Either 'value' or 'predicted_value' must be provided."
+            )
+        if self._state.adding or self.has_changed(field_name='time'):
+            self.time = clean_time_field(self.time, metric)
+
+        if not bulk:
+            # The dimensions must exist. At bulk creation, we assume they already exist.
+            _ = self.spatial_dimension
+            _ = self.time_dimension
+
+        super().clean()
+
+    def save(self, *args, **kwargs):
+        self.clean()
+
+        self.anomaly_degree = self.calculate_anomaly_degree()
+
+        is_adding = self._state.adding
+        if not is_adding:
+            # force updates to exclude primary key fields
+            # NOTE: Clickhouse doesn't support updates on primary key fields
+            if "update_fields" not in kwargs:
+                kwargs["update_fields"] = [
+                    f.name for f in self._meta.fields
+                    if f.name not in ("time", "metric_id", "h3_index", "id")
+                ]
+
+        # Check if the metric value already exists
+        if is_adding:
+            existing = MetricValue.objects.filter(
+                metric_id=self.metric_id,
+                h3_index=self.h3_index,
+                time=self.time
+            ).exists()
+            if existing:
+                raise IntegrityError(
+                    f"A MetricValue for metric {self.metric_id}, H3 index {self.h3_index} "
+                    f"and time {self.time} already exists."
+                )
+        super().save(*args, **kwargs)
+
+        if is_adding:  # A new object is being created
+            self.time_dimension.increase_total_cells()
+            if self.metric.is_predictable:
+                # If the Metric is being created, we need to assign a predictor and refresh the prediction
+                self.refresh_prediction()
+
+    class Meta:
+        engine = clickhouse_models.ReplacingMergeTree(
+            primary_key=['metric_id', 'h3_index', 'time'],
+            order_by=['metric_id', 'h3_index', 'time'],
+            partition_by=[clickhouse_models.toYYYYMM('time')],
+            index_granularity=4096,
+            # TODO: Think about add TTL in the future. Either remove data or move it to a different table.
+            # Note: For that, use a custom migration since it is not supported by django-clickhouse-backend for now:
+            # https://github.com/jayvynl/django-clickhouse-backend/issues/116
+        )
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(value__isnull=False) | models.Q(predicted_value__isnull=False),
+                name='value_or_predicted_value_must_be_present',
+            )
+        ]
+        ordering = ['metric_id', 'h3_index', '-time']
+        indexes = [
+            clickhouse_models.Index(
+                fields=['h3_index'],
+                name='h3_index_bloom_filter_index',
+                type=clickhouse_models.BloomFilter(),
+                granularity=32,
+            ),
+        ]
+        verbose_name = _('Metric Value')
+        verbose_name_plural = _('Metric Values')
+
+    def __str__(self):
+        return f"{self.metric_id} on {self.time} for {self.h3_index}: {self.value}"
+
+
+class MetricTimeDimension(LifecycleModelMixin, models.Model):
+    """
+    Model to store the metric time dimension related attributes.
+    """
+
+    class MetricValueType(models.IntegerChoices):
+        """
+        Type of the metric value.
+        """
+        REANALYSIS = 1, _('Reanalysis')
+        FORECAST = 2, _('Forecast')
+
+    ALLOWED_TYPE_CHANGES = {
+        MetricValueType.REANALYSIS: [],
+        MetricValueType.FORECAST: [MetricValueType.REANALYSIS,]
+    }
+
+    metric = models.ForeignKey(
+        Metric,
+        on_delete=models.CASCADE,
+        related_name='time_dimensions',
+        verbose_name=_('Metric'),
+        help_text=_('The metric associated to the time dimensions.')
+    )
+    time = models.DateTimeField(
+        null=False, blank=False,
+        verbose_name=_('Time'),
+        help_text=_('The date and time of the metric values.')
+    )
+    type = models.PositiveSmallIntegerField(
+        choices=MetricValueType.choices,
+        null=False, blank=False,
+        verbose_name=_('Type'),
+        help_text=_('The type of the raw value.')
+    )
+    total_cells = models.IntegerField(
+        null=False, blank=True, default=0,
+        verbose_name=_('Total Cells'),
+        help_text=_('The total number of cells.')
+    )
+    total_cells_predicted = models.IntegerField(
+        null=True, blank=True,
+        verbose_name=_('Total Cells Completed'),
+        help_text=_('The total number of cells processed with a prediction.'),
+    )
+    prediction_progress = models.GeneratedField(
+        expression=models.Case(
+            models.When(total_cells_predicted__isnull=True, then=models.Value(None)),
+            default=models.F('total_cells_predicted') * 1.0 / models.F('total_cells')
+        ),
+        output_field=RealField(),
+        # If db_persist is set to false, then the field will not be persisted in the database
+        # and the computed value will be calculated on the READ queries, which is not optimal.
+        db_persist=True,
+        null=True, blank=True,
+        verbose_name=_('Prediction Progress'),
+        help_text=_('The percentage of cells completed with a prediction.'),
+        validators=[MinValueValidator(0), MaxValueValidator(1)]
+    )
+
+    def increase_total_cells_predicted(self, inc_value=1):
+        """
+        Increment the total finished count.
+        """
+        self.total_cells_predicted = models.Case(
+            models.When(total_cells_predicted__isnull=True, then=models.Value(inc_value)),
+            default=models.F('total_cells_predicted') + inc_value
+        )
+        self.save(update_fields=['total_cells_predicted'])
+        self.refresh_from_db(fields=['total_cells_predicted'])
+
+    def increase_total_cells(self, inc_value=1):
+        """
+        Increment the total cells count.
+        """
+        self.total_cells = models.F('total_cells') + inc_value
+        self.save(update_fields=['total_cells'])
+        self.refresh_from_db(fields=['total_cells'])
+
+    @hook(BEFORE_UPDATE, condition=WhenFieldHasChanged('type', has_changed=True))
+    def _check_type_field_changes(self):
+        old_type = self.initial_value("type")
+        new_value = self.type
+        if new_value not in self.ALLOWED_TYPE_CHANGES.get(old_type, []):
+            raise ValidationError(
+                f"Invalid type change from {self.MetricValueType(old_type).label} to "
+                f"{self.MetricValueType(new_value).label}."
+            )
+
+    def save(self, *args, **kwargs):
+        if self._state.adding or self.has_changed(field_name='time'):
+            self.time = clean_time_field(self.time, self.metric)
+            self.total_cells = MetricValue.objects.filter(time=self.time, metric_id=self.metric_id).count()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Statistics for the metric {self.metric_id} at {self.time}."
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['metric', 'time'], name='unique_metric_time_dimension'
+            ),
+        ]
+        ordering = ['metric', '-time']
+        indexes = [
+            models.Index(fields=['metric', 'time'])
+        ]
+        verbose_name = "Metric Time Dimension"
+        verbose_name_plural = "Metric Time Dimensions"
+
+
+class MetricSpatialDimension(models.Model):
+    """
+    Model to store the metric spatial dimension related attributes.
+    """
+    metric = models.ForeignKey(
+        Metric,
+        on_delete=models.CASCADE,
+        related_name='spatial_dimensions',
+        verbose_name=_('Metric'),
+        help_text=_('The metric associated to the spatial dimensions.')
+    )
+    h3_index = models.CharField(
+        null=False, blank=False,
+        max_length=16,
+        verbose_name=_('H3 Index'),
+        help_text=_('The H3 index of the region.'),
+    )
+    trend = ArrayField(
+        base_field=RealField(),
+        null=True, blank=True,
+        verbose_name=_('Trend'),
+        help_text=_('The predicted trend for the metric.')
+    )
+    yearly_seasonality = ArrayField(  # ! CAREFUL: The type ArrayField only works in PostgreSQL
+        base_field=RealField(),  # ! CAREFUL: The type RealField only works in PostgreSQL
+        size=365,
+        null=True, blank=True,
+        verbose_name=_('Yearly Seasonality'),
+        help_text=_('The predicted yearly seasonality for the metric.')
+    )
+    weekly_seasonality = ArrayField(
+        base_field=RealField(),
+        size=7,
+        null=True, blank=True,
+        verbose_name=_('Weekly Seasonality'),
+        help_text=_('The predicted weekly seasonality for the metric.')
+    )
+    daily_seasonality = ArrayField(
+        base_field=RealField(),
+        size=24,
+        null=True, blank=True,
+        verbose_name=_('Daily Seasonality'),
+        help_text=_('The predicted daily seasonality for the metric.')
+    )
+
+    def clean(self):
+        # H3 Index Validation
+        try:
+            int(self.h3_index, 16)
+        except TypeError:
+            raise ValidationError("Invalid H3 index. Needs to be hexadecimal.")
+        if not h3.is_valid_cell(self.h3_index):
+            raise ValidationError(
+                "The H3 index must be a valid H3 cell."
+            )
+        if h3.get_resolution(self.h3_index) != self.metric.h3_resolution:
+            raise ValidationError(
+                f"The H3 index ({self.h3_index}) must have the same resolution as the metric."
+            )
+
+        super().clean()
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['metric', 'h3_index'],
+                name='spatial_dimension_unique_metric_h3_index'
+            ),
+        ]
+        ordering = ['metric', 'h3_index']
+        indexes = [
+            models.Index(fields=['metric', 'h3_index'])
+        ]
+        verbose_name = _('Metric Spatial Dimension')
+        verbose_name_plural = _('Metric Spatial Dimensions')
+
+    def __str__(self):
+        return f"Spatial Dimension for metric {self.metric_id} in H3 cell {self.h3_index}"

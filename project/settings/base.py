@@ -40,18 +40,22 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'clickhouse_backend',
     'rest_framework',
+    'rest_framework_gis',
     'rest_framework.authtoken',
     'drf_spectacular',
+    "drf_spectacular_sidecar",
     'django_filters',
+    'drf_standardized_errors',
     # 'django_hosts',
     "corsheaders",
 ]
 
 LOCAL_APPS = [
     'src.utils',
-    'src.regions',
-    'src.predictions',
+    'src.metrics',
+    'src.tasks',
 ]
 # https://docs.djangoproject.com/en/dev/ref/settings/#installed-apps
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -80,14 +84,23 @@ MIDDLEWARE = [
 # https://docs.djangoproject.com/en/dev/ref/settings/#databases
 DATABASES = {
     'default': {
-        'ENGINE': 'django.contrib.gis.db.backends.postgis',
+        'ENGINE': 'django.db.backends.postgresql',
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         'NAME': os.environ.get('POSTGRES_DB', 'metrics'),
-        'USER': os.environ.get('POSTGRES_USER'),
-        'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
+        'USER': os.environ.get('POSTGRES_USER', 'metrics_user'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'insecure_password_for_local_development'),
+    },
+    'clickhouse': {
+        'ENGINE': 'clickhouse_backend.backend',
+        'HOST': os.environ.get('CLICKHOUSE_HOST', 'localhost'),
+        'PORT': os.environ.get('CLICKHOUSE_PORT', '8124'),
+        'NAME': os.environ.get('CLICKHOUSE_DB', 'metrics'),
+        'USER': os.environ.get('CLICKHOUSE_USER', 'metrics_user'),
+        'PASSWORD': os.environ.get('CLICKHOUSE_PASSWORD', 'insecure_password_for_local_development'),
     }
 }
+DATABASE_ROUTERS = ['project.dbrouters.ClickHouseRouter']
 # https://docs.djangoproject.com/en/stable/ref/settings/#std:setting-DEFAULT_AUTO_FIELD
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -101,6 +114,22 @@ CACHES = {
         "LOCATION": REDIS_URL,
     }
 }
+
+
+# * STORAGE
+# ------------------------------------------------------------------------------
+S3_ENDPOINT_LOCAL_URL = os.getenv('S3_ENDPOINT_LOCAL_URL', 'http://localhost:9010')
+S3_ENDPOINT_URL = os.getenv('S3_ENDPOINT_URL', 'http://storage:9000')
+S3_ACCESS_KEY = os.getenv('RUSTFS_ACCESS_KEY', 'metrics_user')
+S3_SECRET_KEY = os.getenv('RUSTFS_SECRET_KEY', 'insecure_password_for_local_development')
+S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'metricvalues')
+
+
+# * CELERY
+# ------------------------------------------------------------------------------
+CELERY_TASK_TRACK_STARTED = True
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 
 
 # * URLS
@@ -163,7 +192,7 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / '../static'
 
 
-# # For django-hsots
+# # For django-hosts
 # ROOT_HOSTCONF = 'project.hosts'
 # DEFAULT_HOST = 'api'
 
@@ -179,36 +208,65 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'src.utils.pagination.StandardPagination',
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
-        'rest_framework.filters.OrderingFilter',
     ],
+    "EXCEPTION_HANDLER": "drf_standardized_errors.handler.exception_handler"
 }
 
 # Spectacular settings
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Metrics API',
     'DESCRIPTION': 'API for the Metrics of the Mosquito Alert project',
-    'VERSION': '1.0.0',
+    'VERSION': '2.0.0',
     'CONTACT': {
-        'name': 'Metrics',
-        'email': None,
-        'url': None,
+        "name": "Developers",
+        "email": "it@mosquitoalert.com",
+        "x-role": "responsible developer",
+    },
+    "LICENSE": {
+        # NOTE: identifier is necessary for the openapi-generator python SDK to work.
+        # If every update to openapi 3.1.0, a new field 'identifier' can be added
+        "name": "GPL-3.0-only",  # IMPORTANT: for openapi 3.0.3 must be a valid SPDX identifier.
+        # See: https://spdx.org/licenses/
+        "url": "https://github.com/Mosquito-Alert/metrics/blob/master/LICENSE.md",
     },
     'SERVERS': [
         {
-            'url': 'http://localhost:8000/api/v1/',
-            'description': 'Development API v1'
+            'url': 'http://localhost:8000/api/v2/',
+            'description': 'Development API v2'
         },
     ],
-    'SCHEMA_PATH_PREFIX': '/api/v[0-9]',
+    'SCHEMA_PATH_PREFIX': r'/api/v[0-9]+(?=/)',
     'SCHEMA_PATH_PREFIX_TRIM': True,
     'SWAGGER_UI_SETTINGS': {
         'deepLinking': True,
         'persistAuthorization': True,
     },
     'OAS_VERSION': '3.0.3',
+    "SERVE_INCLUDE_SCHEMA": False,
     'POSTPROCESSING_HOOKS': [],  # NOTE: needed for the openapi-generator and so we can upload files through the UI.
     'ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE': False,  # See: https://github.com/tfranzel/drf-spectacular/issues/235
     'ENUM_GENERATE_CHOICE_DESCRIPTION': False,
+    "EXTENSIONS_INFO": {
+        "x-logo": {
+            "altText": "Mosquito Alert Logo",
+            "backgroundColor": "#fafafa",
+            "url": "https://api.mosquitoalert.com/static/api/icons/og_logo.png",
+        },
+    },
+    "REDOC_UI_SETTINGS": {
+        "maxDisplayedEnumValues": "5",
+        "sortTagsAlphabetically": True,
+        "sortOperationsAlphabetically": True,
+        "theme": {
+            "sidebar": {"width": "380px"},
+            "logo": {
+                "maxWidth": "260px",
+            },
+        },
+    },
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
     'COMPONENT_SPLIT_REQUEST': True,
 }
 

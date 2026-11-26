@@ -1,8 +1,9 @@
 
 
 import h3
-from drf_spectacular.utils import (OpenApiParameter,
-                                   OpenApiResponse, extend_schema)
+from drf_spectacular.utils import (OpenApiParameter, OpenApiResponse,
+                                   extend_schema, inline_serializer)
+from rest_framework import serializers as drf_serializers
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import action
@@ -56,7 +57,20 @@ class MetricViewSet(GenericViewSet, ListModelMixin, RetrieveModelMixin):
         permission_classes = [AllowAny]
         filterset_class = filters.MetricValueFilter
 
-        @extend_schema(responses={202: OpenApiResponse(description='File accepted for processing')})
+        @extend_schema(
+            responses={
+                202: OpenApiResponse(
+                    description='File accepted for processing',
+                    response=inline_serializer(
+                        name='MetricFileResponse',
+                        fields={
+                            'status': drf_serializers.CharField(),
+                            'task_id': drf_serializers.CharField(),
+                        }
+                    ),
+                )
+            }
+        )
         @action(
             methods=['POST'],
             detail=False,

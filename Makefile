@@ -6,7 +6,17 @@
 .DEFAULT_GOAL	:= help
 SHELL			:= /bin/bash
 
-DOCKER_COMPOSE_LOCAL ?= docker-compose.local.yml
+# Environment
+ENV_FILE ?= .env
+-include $(ENV_FILE)
+export
+
+# Docker Compose configuration
+ifeq ($(PRODUCTION),true)
+    DOCKER_COMPOSE_LOCAL ?= docker-compose.yml
+else
+    DOCKER_COMPOSE_LOCAL ?= docker-compose.local.yml
+endif
 DOCKER_COMPOSE_FLAGS ?= -f $(DOCKER_COMPOSE_LOCAL)
 
 # ---------------------------------------------------

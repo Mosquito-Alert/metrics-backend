@@ -42,7 +42,7 @@ services:
       - storage_data:/data
 
   api: &api
-    image: ghcr.io/mosquito-alert/metrics-backend:2.0.4
+    image: ghcr.io/mosquito-alert/metrics-backend:2.0.5
     container_name: metrics-api
     hostname: api
     volumes:

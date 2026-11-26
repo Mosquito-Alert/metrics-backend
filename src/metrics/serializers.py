@@ -200,9 +200,6 @@ class MetricFileSerializer(Serializer):
             if parsed_datetime.tzinfo is None:
                 parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
 
-            # Compare to now in UTC
-            if parsed_datetime > datetime.now(timezone.utc):
-                raise ValidationError('Date cannot be in the future.')
         except ValueError:
             raise ValidationError(f"Invalid date in filename: {date_str}")
         # Clean the time field
@@ -218,6 +215,9 @@ class MetricFileSerializer(Serializer):
             raise ValidationError(
                 f"Invalid metric type in filename: {metric_type}. Accepted values are: "
                 f"{', '.join(models.MetricTimeDimension.MetricValueType._value2member_map_.keys())}")
+        # Only observed data (e.g. reanalysis) can't be in the future
+        if metric_type.lower() != 'forecast' and parsed_datetime > datetime.now(timezone.utc):
+            raise ValidationError('Date cannot be in the future.')
         self.context['filename_type'] = parsed_type
         self.context['metric'] = metric
 
